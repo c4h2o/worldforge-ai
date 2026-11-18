@@ -7,7 +7,7 @@
 
 ```bash
 npm run dev        # = node apps/api/src/server.mjs  （零依赖，无需 install）
-# 打开 http://localhost:4321  →  世界画布（自动创建默认场景）
+# 打开 http://localhost:4321  →  世界画布（自动创建默认场景）  |  http://localhost:4321/film.html  →  成片播放器
 ```
 
 ## 2. 异步任务模型（自研）
@@ -102,14 +102,27 @@ apps/worker/     # BullMQ Worker（消费生成任务，调 ImageTo3DProvider，
 ## 7.5 自研重建引擎（apps/recon）
 
 - 启动：`npm run dev:recon` → `http://localhost:8080`（零依赖，Node 内置模块）。
-- 端点：`POST /infer {images:[url],category}` → `{task_id}`；`GET /tasks/:id`；`GET /recon/models/:file.glb`。
-- 能力：输入概念图（URL/本地路径/Data-URL）→ 语义感知**贴图 GLB**（以图像为 baseColorTexture，按类别比例构型）。
+- 端点：`POST /infer {images:[url],category}` → `{task_id}`；`POST /infer-multiview {images:[url,...]}` → `{task_id}`；`GET /tasks/:id`；`GET /recon/models/:file.glb`。
+- 能力：输入概念图（URL/本地路径/Data-URL）→ 语义感知**贴图 GLB**（以图像为 baseColorTexture，按类别比例构型；`/infer-multiview` 多图 → 部件按视图交替贴图，多材质）。
+- 部件动画：GLB `asset.extras.parts` 每基元携带 `{name,pivot,axis,speed}`（crane 吊臂绕塔顶 `y`、robot 双臂绕肩 `x`、light 灯头绕杆顶 `y`）。
 - 接入：`IMG3D_PROVIDER=local` + `LOCAL_RECON_ENDPOINT=http://localhost:8080`。
 - 零外部依赖：不引入任何第三方开源/商用组件。
+
+
+## 7.6 浏览器世界画布与成片（零依赖 WebGL）
+
+- 启动：`npm run dev` → `http://localhost:4321`；`/` 世界画布、`/film.html` 成片播放器。
+- 渲染核心：`apps/api/public/renderer.mjs`（零依赖裸 WebGL：GLB 解析、`createImageBitmap` 贴图、Lambert 光照、矩阵库、`rotAxis`）。
+- 世界画布：`/` 读取 `/api/scenes` + `/api/assets` → 渲染真实贴图资产；轨道相机（左拖旋转/右键平移/滚轮缩放）；部件绕枢轴动画（时间驱动）。
+- 成片：`/film.html` 运镜预设——开场·推近 / 环绕 / 摇摄·扫场 / 平移·横移 / 特写 / 收尾·拉远（dolly/pull/orbit/pan/truck，smoothstep 缓动）；`canvas.captureStream(30)`+`MediaRecorder` → `.webm`；逐帧 PNG 序列 → 零依赖 ZIP（STORE，CRC32）。
+- 参数化：实体 `animation:{speed, parts:{partN:{speed,angle}}}` → 渲染器覆盖（speed 倍率、angle 偏置），持久化到场景 JSON；`createScene` 复用库中同类别资产。
+- 持久化：`output/assets.json` + `output/scenes/*.json` 启动加载（`loadPersisted` 同步升 `taskSeq`，避免资产 ID 碰撞）。
+- 零外部依赖：不依赖 Three.js / 任何第三方开源或商用组件。
 
 ## 8. 下一步
 
 - [ ] 接真实 `LocalReconstructionProvider`（`LOCAL_RECON_ENDPOINT`，零外部依赖自研引擎）验证质量。
 - [ ] 编排智能体接 LLM Function Calling / MCP（`packages/orchestrator` 已就绪）。
-- [ ] 前端世界画布增强：拖拽摆放、环境/光照编辑、资产复用搜索。
-- [ ] 影视镜头序列（`export.film`）与渲染。
+- [x] 前端世界画布（零依赖 WebGL，真贴图资产 + 部件动画）。
+- [x] 影视镜头序列（`export.film` 运镜预设 + `.webm`/序列帧导出）。
+- [ ] 拖拽摆放、环境/光照编辑、资产复用搜索。
