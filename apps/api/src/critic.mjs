@@ -106,3 +106,142 @@ export function reviewScene(scene, opts = {}) {
   for (const i of issues) byCode[i.code] = (byCode[i.code] || 0) + 1;
   return { score, ok: score >= 70, issues, summary: byCode, suggestions: issues.slice(0, 5).map(i => i.fix) };
 }
+
+
+// ── 生成 → 批评 → 自动修正 闭环 ─────────────────────────
+// 迭代应用修复建议直到 reviewScene.ok === true（或达上限/无可改项）。
+export function autofixScene(scene, opts = {}) {
+  const extentFor = opts.extentFor || (() => [1, 1, 1]);
+  const spec = opts.spec || null;
+  const applied = [], unresolved = [];
+  const unresolvedKey = new Set();
+  const markUnresolved = (u) => { const k = u.code + ':' + (u.id || (u.ids || []).join('/')); if (unresolvedKey.has(k)) return; unresolvedKey.add(k); unresolved.push(u); };
+  const ents = () => (scene && scene.scene_graph && scene.scene_graph.entities) || [];
+  let review = reviewScene(scene, { extentFor, spec });
+  const before = review.score;
+  let rounds = 0; const MAX = 5;
+  while (review.issues.length > 0 && rounds < MAX) {
+    rounds++;
+    let changed = false;
+    for (const iss of review.issues) {
+      const e = ents().find(x => x.id === iss.id);
+      const note = code => code + (iss.id ? ':' + iss.id : '');
+      if (!e) {
+        // 光照类问题（id 为灯）
+        if (iss.code === 'LIGHT_OFF' || iss.code === 'LIGHT_TOO_STRONG') {
+          const l = ((scene.scene_graph && scene.scene_graph.lights) || []).find(x => (x.id || x.type) === iss.id);
+          if (l) { l.intensity = iss.fix.intensity; applied.push({ code: iss.code, id: l.id || l.type, intensity: l.intensity }); changed = true; }
+          else markUnresolved({ code: iss.code, id: iss.id, msg: iss.msg, note: '灯光未找到' });
+        } else if (iss.code === 'MISSING_ENTITY') {
+          const hit = opts.searchAssets ? opts.searchAssets({ category: iss.fix.category }) : [];
+          if (hit.length) {
+            const ai = hit[0];
+            const pos = freeSpot(ents(), { id: 'x', asset_id: ai.id, transform: { position: [0, 0, 0], scale: [1, 1, 1] } }, extentFor);
+            ents().push({ id: ai.id + '_auto' + ents().length, asset_id: ai.id, semantic_role: iss.fix.category,
+              transform: { position: pos, rotation: [0, 0, 0], scale: [1, 1, 1] }, placed_by: 'critic', locked: false });
+            applied.push({ code: iss.code, id: ai.id, category: iss.fix.category, position: pos, note: '复用资产库同类别资产' });
+            changed = true;
+          } else markUnresolved({ code: iss.code, id: iss.id, msg: iss.msg, note: '资产库无同类别资产，需 img3d.fromImage 生成' });
+        } else if (iss.code === 'OVERLAP') {
+          const ea = ents().find(x => x.id === (iss.ids || [])[0]);
+          const eb = ents().find(x => x.id === (iss.ids || [])[1]);
+          if (ea && eb) {
+            const wa = worldBox(ea, extentFor(ea.asset_id || ea.id)), wb = worldBox(eb, extentFor(eb.asset_id || eb.id));
+            const half = (b, k) => (b.max[k] - b.min[k]) / 2;
+            const cen = (b, k) => (b.min[k] + b.max[k]) / 2;
+            const pick = [0, 2].map(ax => ({ ax, gap: half(wa, ax) + half(wb, ax) + 0.4 - Math.abs(cen(wa, ax) - cen(wb, ax)) })).sort((p, q) => p.gap - q.gap)[0];
+            if (pick.gap > 0) {
+              const dir = cen(wb, pick.ax) >= cen(wa, pick.ax) ? 1 : -1;
+              const p = [...(eb.transform.position || [0, 0, 0])];
+              p[pick.ax] += dir * (pick.gap / 2 + 0.01);
+              eb.transform.position = p;
+              applied.push({ code: iss.code, id: eb.id, axis: pick.ax, shift: Math.round(dir * (pick.gap / 2 + 0.01) * 100) / 100, position: p }); changed = true;
+            } else markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg, note: '已无需分离' });
+          } else markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg, note: '重叠实体未找到' });
+        } else if (iss.code === 'NO_LIGHTS') {
+          scene.scene_graph.lights.push(iss.fix.lights[0]);
+          applied.push({ code: iss.code, note: '补半球光 ' + iss.fix.lights[0].intensity }); changed = true;
+        } else markUnresolved({ code: iss.code, id: iss.id, msg: iss.msg, note: '实体未找到' });
+        continue;
+      }
+      switch (iss.code) {
+        case 'OUT_OF_ZONE': {
+          const z = (scene.scene_graph.zones || [])[0];
+          if (!z || !z.bounds) { markUnresolved({ code: iss.code, id: iss.id, msg: iss.msg, note: '无分区' }); break; }
+          const [zx0, zy0, zz0, zx1, zy1, zz1] = z.bounds;
+          const ext = extentFor(e.asset_id || e.id);
+          const pos = [...(e.transform.position || [0, 0, 0])];
+          const scl = [...(e.transform.scale || [1, 1, 1])];
+          let moved = false;
+          const hw = ext[0] * scl[0] / 2, hd = ext[2] * scl[2] / 2;
+          const cx = Math.min(Math.max(pos[0], zx0 + hw), Math.max(zx0 + hw, zx1 - hw));
+          const cz = Math.min(Math.max(pos[2], zz0 + hd), Math.max(zz0 + hd, zz1 - hd));
+          if (Math.abs(cx - pos[0]) > 1e-6) { pos[0] = cx; moved = true; }
+          if (Math.abs(cz - pos[2]) > 1e-6) { pos[2] = cz; moved = true; }
+          const spanY = zy1 - zy0, hgt = ext[1] * scl[1];
+          if (spanY > 0 && hgt > spanY) { scl[1] *= spanY / hgt; moved = true; }   // 超高 → 压缩 y 使整体入界
+          if (pos[1] < zy0) { pos[1] = zy0; moved = true; }
+          if (moved) { e.transform.position = pos; e.transform.scale = scl; applied.push({ code: iss.code, id: e.id, position: pos, scale: scl }); changed = true; }
+          else markUnresolved({ code: iss.code, id: e.id, msg: iss.msg, note: '分区容不下该尺寸，需缩小分区或移除实体' });
+          break;
+        }
+        case 'OVERLAP': {
+          const ea = ents().find(x => x.id === (iss.ids || [])[0]);
+          const eb = ents().find(x => x.id === (iss.ids || [])[1]);
+          if (ea && eb) {
+            const wa = worldBox(ea, extentFor(ea.asset_id || ea.id)), wb = worldBox(eb, extentFor(eb.asset_id || eb.id));
+            const half = (b, k) => (b.max[k] - b.min[k]) / 2;
+            const cen = (b, k) => (b.min[k] + b.max[k]) / 2;
+            const pick = [0, 2].map(ax => ({ ax, gap: half(wa, ax) + half(wb, ax) + 0.4 - Math.abs(cen(wa, ax) - cen(wb, ax)) }))
+              .sort((p, q) => p.gap - q.gap)[0];
+            if (pick.gap > 0) {
+              const dir = cen(wb, pick.ax) >= cen(wa, pick.ax) ? 1 : -1;
+              const p = [...(eb.transform.position || [0, 0, 0])];
+              p[pick.ax] += dir * (pick.gap / 2 + 0.01);
+              eb.transform.position = p;
+              applied.push({ code: iss.code, id: eb.id, axis: pick.ax, shift: dir * (pick.gap / 2 + 0.01), position: p }); changed = true;
+            }
+          } else markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg, note: '重叠实体未找到' });
+          break;
+        }
+        case 'SCALE_TOO_TALL':
+        case 'SCALE_TOO_SMALL':
+        case 'ANISOTROPIC':
+        case 'PHYSICS_DRIFT':
+          if (iss.fix && iss.fix.scale) { e.transform.scale = iss.fix.scale; applied.push({ code: iss.code, id: iss.id, scale: iss.fix.scale }); changed = true; }
+          else if (iss.fix && iss.fix.physics) { e.physics = iss.fix.physics; applied.push({ code: iss.code, id: iss.id, physics: iss.fix.physics }); changed = true; }
+          else markUnresolved({ code: iss.code, id: iss.id, msg: iss.msg, note: '无修复建议' });
+          break;
+        default:
+          markUnresolved({ code: iss.code, id: iss.id, msg: iss.msg, note: '暂无自动修正' });
+      }
+    }
+    review = reviewScene(scene, { extentFor, spec });
+    if (!changed) break;
+  }
+  return { rounds, before, after: review.score, ok: review.ok, clean: review.issues.length === 0, applied, unresolved, issues: review.issues };
+}
+
+// 为新增实体找不重叠的空位（网格扫描）
+function freeSpot(entities, candidate, extentFor) {
+  const ext = extentFor(candidate.asset_id || candidate.id);
+  const box = (e) => worldBox(e, extentFor(e.asset_id || e.id));
+  const zones = [];
+  const test = (pos) => {
+    const c = { ...candidate, transform: { ...candidate.transform, position: pos } };
+    const bc = worldBox(c, ext);
+    return entities.every(e => {
+      const be = box(e);
+      const ox = Math.min(bc.max[0], be.max[0]) - Math.max(bc.min[0], be.min[0]);
+      const oz = Math.min(bc.max[2], be.max[2]) - Math.max(bc.min[2], be.min[2]);
+      const oy = Math.min(bc.max[1], be.max[1]) - Math.max(bc.min[1], be.min[1]);
+      return !(ox > 0 && oy > 0 && oz > 0);
+    });
+  };
+  const span = ext[0] / 2 + ext[2] / 2 + 0.4;
+  for (let gx = -6; gx <= 6; gx += 3.2) for (let gz = -6; gz <= 6; gz += 3.2) {
+    const p = [gx, 0, gz];
+    if (test(p)) return p;
+  }
+  return [12, 0, 0];
+}

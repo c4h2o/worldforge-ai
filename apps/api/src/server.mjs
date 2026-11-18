@@ -11,7 +11,7 @@ import { conceptImage } from '../../demo/src/png.mjs';
 import { createProvider, downloadModel, sleep } from './providers.mjs';
 import { getUnits } from './units.mjs';
 import { runAgent, TOOL_DEFS } from './agent.mjs';
-import { reviewScene } from './critic.mjs';
+import { reviewScene, autofixScene } from './critic.mjs';
 import { createLLM } from './llm.mjs';
 import { createImageProvider } from './image-providers.mjs';
 
@@ -325,6 +325,14 @@ export function createApp(options = {}) {
     },
     'canvas.layout': async (args, ctx) => { const scene = await createScene(args.brief || ctx.brief, args.spec); return { result: { scene_id: scene.id, entities: scene.scene_graph.entities.length, style: scene.style, note: '实体物理尺寸已按 SI 约束缩放（见 system.units）' } }; },
     'critic.review': async (args) => { const scene = [...scenes.values()].at(-1); if (!scene) throw new Error('先创建场景'); const spec = args.spec || (scene.brief ? parseBrief(scene.brief) : null); const r = reviewScene(scene, { extentFor: assetExtent, spec }); return { result: { scene_id: scene.id, entities: scene.scene_graph.entities.length, ...r } }; },
+    'critic.autofix': async (args) => {
+      const scene = [...scenes.values()].at(-1);
+      if (!scene) throw new Error('先创建场景');
+      const spec = args.spec || (scene.brief ? parseBrief(scene.brief) : null);
+      const r = autofixScene(scene, { extentFor: assetExtent, spec, searchAssets });
+      fs.writeFileSync(path.join(SCENES_DIR, scene.id + '.json'), JSON.stringify(scene, null, 2));
+      return { result: { scene_id: scene.id, ...r } };
+    },
     'export.game': async () => { const scene = [...scenes.values()].at(-1); if (scene) fs.writeFileSync(path.join(OUT, 'scene.json'), JSON.stringify(scene, null, 2)); return { result: { path: 'output/scene.json', scene_id: scene && scene.id } }; },
     'export.film': async () => { const scene = [...scenes.values()].at(-1); if (!scene) throw new Error('先创建场景'); const film = filmForScene(scene); return { result: { film_id: film.id, shots: film.shots.length, duration: film.duration, player: '/film.html?id=' + scene.id } }; },
   };
@@ -422,12 +430,21 @@ export function createApp(options = {}) {
       if (p === '/film.html' && req.method === 'GET') { const data = fs.readFileSync(FILM_HTML); res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(data); }
       if (p === '/film.mjs') { const data = fs.readFileSync(FILM_JS); res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(data); }
       if (p === '/renderer.mjs') { const data = fs.readFileSync(RENDERER_JS); res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(data); }
+      const fixRe = p.match(/^\/api\/scenes\/([^/]+)\/autofix$/);
+      if (fixRe && req.method === 'POST') {
+        const sc = scenes.get(fixRe[1]);
+        if (!sc) return json(res, 404, { error: '场景不存在' });
+        const spec = parseBrief(sc.brief || '');
+        const r = autofixScene(sc, { extentFor: assetExtent, spec, searchAssets });
+        fs.writeFileSync(path.join(SCENES_DIR, sc.id + '.json'), JSON.stringify(sc, null, 2));
+        return json(res, 200, { scene_id: sc.id, ...r });
+      }
       const criticRe = p.match(/^\/api\/scenes\/([^/]+)\/critic$/);
       if (criticRe && (req.method === 'GET' || req.method === 'POST')) {
         const sc = scenes.get(criticRe[1]);
         if (!sc) return json(res, 404, { error: '场景不存在' });
         const spec = parseBrief(sc.brief || '');
-        return json(res, 200, { scene_id: sc.id, entities: sc.scene_graph.entities.length, ...reviewScene(sc, { extentFor: assetExtent, spec }) });
+        const rv = reviewScene(sc, { extentFor: assetExtent, spec }); return json(res, 200, { scene_id: sc.id, entities: sc.scene_graph.entities.length, clean: rv.issues.length === 0, ...rv });
       }
       const filmRe = p.match(/^\/api\/scenes\/([^/]+)\/film$/);
       if (filmRe && (req.method === 'GET' || req.method === 'POST')) {

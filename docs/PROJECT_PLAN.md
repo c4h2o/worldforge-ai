@@ -208,6 +208,7 @@ Asset Library (语义标签/来源链/缩略图)
 **F. 检查与批评域（审美 Agent）**
 - `critic.review(assetOrScene, {criteria}) → {score, ok, issues[], suggestions[]}`（**四维审查**：① 物理量纲/比例——过高/过小/各向异性，量纲以 SI 为单位 ② 布局——占地重叠率、越出分区 ③ 语义一致性——规范实体缺失、物理量漂移 ④ 光照——缺失/强度异常；输出严重度 high/medium/low + **可执行修复建议**（移动/缩放/补灯），评分 = 100 − 扣分（18/8/3），供 AI 自动修正）
 - `critic.styleConsistency(scene) → {score, issues}`
+- `critic.autofix(sceneId) → {rounds, before, after, ok, clean, applied[], unresolved[]}`（生成→批评→自动修正闭环：越界夹回/超高压缩、占地重叠分离、比例归一、补灯、缺失实体复用资产库摆放，迭代至 clean）
 
 **G. 导出/成片域**
 - `export.game(sceneId, {engine, format}) → task`（glTF/GLB + 场景 JSON + 运行时包）
