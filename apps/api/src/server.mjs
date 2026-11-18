@@ -192,6 +192,37 @@ function applyPhysicsScale(physics, extent) {
   return [axes[0] ?? vals[0], axes[1] ?? vals[0], axes[2] ?? vals[0]]; // 多轴 → 各自 + 补齐
 }
 
+
+// ── 资产库语义检索（AI 复用匹配）──
+function searchAssets(query = {}) {
+  let out = [...assets.values()];
+  const { q, category, tags, physics } = query;
+  if (category) out = out.filter(a => a.category === category);
+  if (Array.isArray(tags) && tags.length) out = out.filter(a => tags.some(t => (a.semantic_tags || []).includes(t)));
+  if (q) {
+    const ql = String(q).toLowerCase();
+    out = out.filter(a => [a.name, a.category, ...(a.semantic_tags || []), (a.provenance && a.provenance.image_ids || []).join(' ')]
+      .join(' ').toLowerCase().includes(ql));
+  }
+  if (physics) {
+    const dims = physics.dimensions || physics;
+    out = out.filter(a => {
+      const ext = assetExtent(a.id);
+      for (const [k, v] of Object.entries(dims)) {
+        if (!v || v.value === undefined) continue;
+        const ax = /^length|^width|^x/.test(k) ? 0 : /^height|^y/.test(k) ? 1 : /^depth|^z/.test(k) ? 2 : -1;
+        if (ax < 0) continue;
+        const val = ext[ax];
+        if (/Min$/.test(k)) { if (val < v.value) return false; }
+        else if (/Max$/.test(k)) { if (val > v.value) return false; }
+        else if (/^Eq|^Exact/.test(k)) { if (Math.abs(val - v.value) > 1e-6) return false; }
+      }
+      return true;
+    });
+  }
+  return out.map(a => ({ id: a.id, name: a.name, category: a.category, local_path: a.local_path, thumbnail: a.thumbnail, tags: a.semantic_tags || [], extent: assetExtent(a.id), faces: a.mesh_stats && a.mesh_stats.faces, parts: a.mesh_stats && a.mesh_stats.parts }));
+}
+
 function placeEntities(assetIds, specEntities = []) {
   return assetIds.map((aid, i) => {
     const col = i % 4, row = Math.floor(i / 4);
@@ -270,6 +301,7 @@ export function createApp(options = {}) {
       const a = assets.get(task_id);
       return { result: { task_id, asset_id: task_id, model_url: a && a.local_path, category: a && a.category } };
     },
+    'asset.search': async (args) => ({ result: { query: args, count: searchAssets(args).length, assets: searchAssets(args) } }),
     'asset.ingest': async (args) => {
       const a = assets.get(args.asset_id);
       if (a && Array.isArray(args.tags)) a.semantic_tags = [...new Set([...a.semantic_tags, ...args.tags])];
@@ -305,6 +337,11 @@ export function createApp(options = {}) {
       }
 
       if (p === '/api/assets' && req.method === 'GET') return json(res, 200, { assets: [...assets.values()] });
+      if (p === '/api/assets/search' && req.method === 'GET') {
+        const q = Object.fromEntries(u.searchParams);
+        if (q.q || q.category || q.tags) q.tags = q.tags ? q.tags.split(',') : undefined;
+        return json(res, 200, { query: q, count: searchAssets(q).length, assets: searchAssets(q) });
+      }
       if (p === '/api/system/units' && req.method === 'GET') return json(res, 200, getUnits());
 
       if (p === '/api/scenes' && req.method === 'POST') {

@@ -26,6 +26,7 @@ npm run dev        # = node apps/api/src/server.mjs  （零依赖，无需 insta
 | GET | `/api/tasks/:id` | 任务状态 | — | Task |
 | GET | `/api/tasks` | 任务列表 | — | `{tasks[]}` |
 | GET | `/api/assets` | 资产库 | — | `{assets[]}` |
+| GET | `/api/assets/search` | **资产库语义检索** | `?q=&category=&tags=&physics=` | `{query, count, assets[]}` |
 | POST | `/api/scenes` | 创建世界场景（语义→任务→摆放） | `{brief}` | WorldScene |
 | GET | `/api/scenes` | 场景列表 | — | `{scenes[]}` |
 | GET | `/api/scenes/:id` | 场景详情 | — | WorldScene |
@@ -68,7 +69,7 @@ packages/orchestrator/    # AI 编排 + 审美批评
 > 让 **LLM 自主决定**调用哪些 AI 接口、传什么参，服务端分发到真实管线，循环直到 LLM 说完成。零依赖，`fetch` 即可。
 
 - `POST /api/agent/run {brief, provider:'mock'|'llm', apiKey?, model?}` → `{log[], messages[], scene_id}`。`provider='mock'` 用 **MockLLM**（离线脚本，CI/无 key 联调）；`'llm'` 走 OpenAI 兼容 `chat/completions` + `tools`（Function Calling）。
-- `GET /api/agent/tools` → 工具清单（MCP 风格发现）：`semantic.parse / semantic.validate / image.generateFromSpec / img3d.fromImage / asset.ingest / canvas.layout / critic.review / export.game / system.units / export.film`。
+- `GET /api/agent/tools` → 工具清单（MCP 风格发现）：`semantic.parse / semantic.validate / image.generateFromSpec / img3d.fromImage / asset.search / asset.ingest / canvas.layout / critic.review / export.game / system.units / export.film`。
 - **Agent 循环**：LLM 返回 `tool_calls` → 服务端 `dispatch[工具名]` 执行并回填结果 → 再交给 LLM；无 `tool_calls` 即完成。
 - **人机门禁**：工具可返回 `needs_approval:true`，Agent 把它透传给调用方，用户确认后继续（风格/内容/合规人工把关）。
 - **环境变量**：`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`、`AGENT_PROVIDER=mock|llm`。
