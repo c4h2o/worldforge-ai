@@ -29,7 +29,7 @@
 | `canvas` | place / layout / environment / camera / validate | 世界画布：AI 摆放、布局、环境光照、相机、校验 |
 | `critic` | review / styleConsistency | 审美批评器：评分、问题、修改建议 |
 | `export` | game / film / audio | 游戏 glTF+场景JSON · 影视镜头序列+渲染 · 音频 |
-| `system` | task.get/list/cancel · balance · file.upload/presign | 任务、计费、文件 |
+| `system` | task.get/list/cancel · balance · file.upload/presign · **units** | 任务、计费、文件、**SI 单位系统**（`system.units` 查询量纲/定义） |
 
 **约定**：耗时操作（生图/生3D/渲染）一律走**异步任务**——提交返回 `task_id`，轮询 `GET /tasks/{id}` 或 Webhook 拿终态（自研）。可返回 `needs_approval` 触发**人机门禁**。建议统一封装为 **MCP 工具** 以便任意 LLM 驱动。
 

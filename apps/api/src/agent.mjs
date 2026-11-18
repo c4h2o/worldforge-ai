@@ -3,12 +3,14 @@
 
 export const TOOL_DEFS = [
   { type: 'function', function: { name: 'semantic.parse', description: '把世界愿景解析为结构化语义规范 SemanticSpec。', parameters: { type: 'object', properties: { brief: { type: 'string', description: '世界愿景一句话' } }, required: ['brief'] } } },
+  { type: 'function', function: { name: 'semantic.validate', description: '校验语义规范的物理属性量纲是否合法（SI 单位）。', parameters: { type: 'object', properties: { spec: { type: 'object', description: '要校验的 SemanticSpec' } } } } },
   { type: 'function', function: { name: 'image.generateFromSpec', description: '按语义规范生成概念图（语义驱动）。', parameters: { type: 'object', properties: { spec: { type: 'object' }, style: { type: 'string' } } } } },
   { type: 'function', function: { name: 'img3d.fromImage', description: '由图片/语义类别生成 3D 资产（自研 image-to-model）。', parameters: { type: 'object', properties: { input: { type: 'string' }, category: { type: 'string' } }, required: ['input'] } } },
   { type: 'function', function: { name: 'asset.ingest', description: '把 3D 资产入库并打语义标签。', parameters: { type: 'object', properties: { asset_id: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } } } } },
   { type: 'function', function: { name: 'canvas.layout', description: '按语义规范做世界布局摆放。', parameters: { type: 'object', properties: { brief: { type: 'string' } }, required: ['brief'] } } },
   { type: 'function', function: { name: 'critic.review', description: '审美/一致性检查，给出评分与问题。', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'export.game', description: '导出可玩场景（glTF+场景JSON）。', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'system.units', description: '查询 SI 单位系统（7 基本单位、22 具名导出单位、常用组合单位及其定义与量纲）。', parameters: { type: 'object', properties: { q: { type: 'string', description: '可选：按符号/名称/量纲过滤，如 N、kg·m/s²、力' } } } } },
   { type: 'function', function: { name: 'export.film', description: '生成镜头序列并导出成片（浏览器渲染）。', parameters: { type: 'object', properties: {} } } },
 ];
 

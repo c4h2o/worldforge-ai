@@ -29,6 +29,7 @@ npm run dev        # = node apps/api/src/server.mjs  （零依赖，无需 insta
 | POST | `/api/scenes` | 创建世界场景（语义→任务→摆放） | `{brief}` | WorldScene |
 | GET | `/api/scenes` | 场景列表 | — | `{scenes[]}` |
 | GET | `/api/scenes/:id` | 场景详情 | — | WorldScene |
+| GET | `/api/system/units` | **SI 单位系统**（7 基本 + 22 具名 + 组合） | — | `{system, base[7], named[22], combined[], count}` |
 | GET | `/` | 世界画布（Three.js） | — | HTML |
 | GET | `/assets/*` · `/images/*` · `/scenes/*` | 静态产物 | — | 文件 |
 
@@ -67,7 +68,7 @@ packages/orchestrator/    # AI 编排 + 审美批评
 > 让 **LLM 自主决定**调用哪些 AI 接口、传什么参，服务端分发到真实管线，循环直到 LLM 说完成。零依赖，`fetch` 即可。
 
 - `POST /api/agent/run {brief, provider:'mock'|'llm', apiKey?, model?}` → `{log[], messages[], scene_id}`。`provider='mock'` 用 **MockLLM**（离线脚本，CI/无 key 联调）；`'llm'` 走 OpenAI 兼容 `chat/completions` + `tools`（Function Calling）。
-- `GET /api/agent/tools` → 工具清单（MCP 风格发现）：`semantic.parse / image.generateFromSpec / img3d.fromImage / asset.ingest / canvas.layout / critic.review / export.game`。
+- `GET /api/agent/tools` → 工具清单（MCP 风格发现）：`semantic.parse / semantic.validate / image.generateFromSpec / img3d.fromImage / asset.ingest / canvas.layout / critic.review / export.game / system.units / export.film`。
 - **Agent 循环**：LLM 返回 `tool_calls` → 服务端 `dispatch[工具名]` 执行并回填结果 → 再交给 LLM；无 `tool_calls` 即完成。
 - **人机门禁**：工具可返回 `needs_approval:true`，Agent 把它透传给调用方，用户确认后继续（风格/内容/合规人工把关）。
 - **环境变量**：`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`、`AGENT_PROVIDER=mock|llm`。
@@ -126,3 +127,13 @@ apps/worker/     # BullMQ Worker（消费生成任务，调 ImageTo3DProvider，
 - [x] 前端世界画布（零依赖 WebGL，真贴图资产 + 部件动画）。
 - [x] 影视镜头序列（`export.film` 运镜预设 + `.webm`/序列帧导出）。
 - [ ] 拖拽摆放、环境/光照编辑、资产复用搜索。
+
+
+## 7. 系统基础：SI 单位系统
+
+> 物理量纲基础：SemanticSpec 中实体物理属性（尺寸/质量/力/功率/照度/温度等）一律以 **SI 单位**表达。
+
+- **注册表**：`apps/api/src/units.mjs`（零依赖）——7 基本单位（含定义）+ 22 具名导出单位 + 常用组合单位，量纲向量 [m,kg,s,A,K,mol,cd]。
+- **接口**：`GET /api/system/units` → 完整注册表；AI 工具 `system.units`（按符号/名称/量纲过滤）。
+- **校验**：`semantic.validate` 检查 `entity.physics` 的量纲合法性（`parseDimension` 解析 `kg·m/s²`、`J/K`、`Ω` 等表达式，含 Unicode 上标 `²³⁻¹`）。
+- **零外部依赖**：纯数据注册表。

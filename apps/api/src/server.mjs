@@ -9,6 +9,7 @@ import { parseBrief, DEFAULT_BRIEF, categoryColor, boxesForCategory } from '../.
 import { buildGLB } from '../../demo/src/glb.mjs';
 import { conceptImage } from '../../demo/src/png.mjs';
 import { createProvider, downloadModel, sleep } from './providers.mjs';
+import { getUnits } from './units.mjs';
 import { runAgent, TOOL_DEFS } from './agent.mjs';
 import { createLLM } from './llm.mjs';
 import { createImageProvider } from './image-providers.mjs';
@@ -178,6 +179,8 @@ async function createScene(brief) {
       entities: placeEntities(ids),
     },
     status: 'draft',
+    'semantic.validate': async (args, ctx) => { const spec = args.spec || (args.brief ? parseBrief(args.brief) : null); if (!spec) throw new Error('缺少 spec 或 brief'); const v = validateUnits(spec); return { result: { ok: v.ok, issues: v.issues, entities_checked: spec.entities.length, note: '物理属性量纲基于 SI（见 system.units）' } }; },
+    'system.units': async (args) => { const u = getUnits(); const q = args && args.q; if (q) { const f = x => (x.symbol + ' ' + x.name + ' ' + x.compose + ' ' + (x.note||'')).toLowerCase(); const hit = [...u.base, ...u.named, ...u.combined].filter(x => f(x).includes(String(q).toLowerCase())); return { result: { q, count: hit.length, units: hit } }; } return { result: u }; },
   };
   scenes.set(sceneId, scene);
   fs.writeFileSync(path.join(SCENES_DIR, sceneId + '.json'), JSON.stringify(scene, null, 2));
@@ -254,6 +257,7 @@ export function createApp(options = {}) {
       }
 
       if (p === '/api/assets' && req.method === 'GET') return json(res, 200, { assets: [...assets.values()] });
+      if (p === '/api/system/units' && req.method === 'GET') return json(res, 200, getUnits());
 
       if (p === '/api/scenes' && req.method === 'POST') {
         const b = await readBody(req);

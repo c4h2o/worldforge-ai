@@ -328,6 +328,17 @@ loop {
 
 ---
 
+### 7.5 物理量纲：SI 单位系统（系统基础）
+
+> 世界生成需要**一致的物理量纲**。SemanticSpec 中实体物理属性（尺寸、质量、力、功率、照度、温度等）一律以 **SI 单位**表达，作为所有生成/摆放/校验的公共基础。
+
+- **7 个基本单位**：米 m、千克 kg、秒 s、安培 A、开尔文 K、摩尔 mol、坎德拉 cd（各含物理定义，如 kg 基于普朗克常数、s 基于铯-133 跃迁）。
+- **22 个具名导出单位**：rad、sr、Hz、N、Pa、J、W、C、V、F、Ω、S、Wb、T、H、℃、lm、lx、Bq、Gy、Sv、kat（按空间/力学/电磁/热学/光学/辐射化学分域）。
+- **组合导出单位**：m/s、m/s²、kg/m³、J/K、J/mol、mol/m³、cd/m² 等（量纲向量 [m,kg,s,A,K,mol,cd]）。
+- **注册表**：`apps/api/src/units.mjs`（零依赖）→ `GET /api/system/units` + AI 工具 `system.units`。
+- **量纲校验**：`semantic.validate` 用 `parseDimension` 解析实体 `physics` 属性单位（如 `kg·m/s²`、`J/K`、`Ω`，支持 Unicode 上标），确保量纲合法并与期望物理量一致。
+
+
 ## 8. 技术栈选型
 
 | 层 | 选型 | 理由 |
