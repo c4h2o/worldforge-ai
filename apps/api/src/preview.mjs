@@ -196,7 +196,7 @@ function raster(color, depth, W, H, t) {
       if (w1 < -1e-4) continue;
       const z = t.az * w1 + t.bz * w2 + t.cz * w0;
       const i = y * W + x;
-      if (z >= depth[i]) continue;   // z 随距离增大，保留更小（更近）的深度
+      if (z <= depth[i]) continue;   // z 随距离递减，保留更大（更近）的深度
       depth[i] = z;
       const fnx = t.nax * w1 + t.nbx * w2 + t.ncx * w0;
       const fny = t.nay * w1 + t.nby * w2 + t.ncy * w0;
@@ -213,11 +213,13 @@ function raster(color, depth, W, H, t) {
         color[o] = t.c[0] * 255; color[o + 1] = t.c[1] * 255; color[o + 2] = t.c[2] * 255;
       }
       color[o + 3] = 255;
-      const d = 0.45 + 0.55 * Math.max(0, fnx * -0.55 + fny * 0.72 + fnz * -0.42);
+      const d = 0.45 + 0.55 * Math.max(0, fnx * t.lx + fny * t.ly + fnz * t.lz);
       const g = d * (t.gain || 1), k = t.tone || 3.0;
-      color[o] = 255 * (1 - Math.exp(-k * color[o] * g / 255));
-      color[o + 1] = 255 * (1 - Math.exp(-k * color[o + 1] * g / 255));
-      color[o + 2] = 255 * (1 - Math.exp(-k * color[o + 2] * g / 255));
+      // 大气透视：远处（z→1）融入夜色，避免大片平面均匀死平
+      const fog = Math.min(1, Math.max(0, (z - 1.0012) / 0.008)), att = 0.46 + 0.54 * fog;
+      color[o] = Math.min(255, 255 * (1 - Math.exp(-k * color[o] * g / 255)) * att);
+      color[o + 1] = Math.min(255, 255 * (1 - Math.exp(-k * color[o + 1] * g / 255)) * att);
+      color[o + 2] = Math.min(255, 255 * (1 - Math.exp(-k * color[o + 2] * g / 255)) * att);
     }
   }
 }
@@ -225,13 +227,16 @@ function raster(color, depth, W, H, t) {
 // ── 场景渲染主入口 ────────────────────────────────
 // scene: {scene_graph:{entities:[{id,asset_id,transform}]}}
 // assetsDir: output/assets；assetFor(assetId) → glb 绝对路径
-export function renderScene(scene, { W = 960, H = 540, camera, assetsDir, assetFor, bg = [11, 16, 32], entities, exposure = 2.6, tone = 3.0, lightDir = [-0.55, 0.72, -0.42] } = {}) {
+export function renderScene(scene, { W = 960, H = 540, camera, assetsDir, assetFor, bg = [11, 16, 32], entities, exposure = 2.6, tone = 3.0, ss = 2, ground = true, lightDir = [-0.55, 0.72, -0.42] } = {}) {
   const t0 = Date.now();
   const ents = entities || (scene.scene_graph && scene.scene_graph.entities) || [];
-  const color = new Uint8Array(W * H * 4);
-  const depth = new Float32Array(W * H).fill(Infinity);
+  // 2x2 超采样：在 RW×RH 上光栅化，最后降采样（消除阶梯边缘）
+  const SS = ss || 2, RW = W*SS, RH = H*SS;
+  const color = new Uint8Array(RW * RH * 4);
+  // NDC z 随距离递减（更近 = z 更大），故保留【更大】者 → 初值必须 -Infinity
+  const depth = new Float32Array(RW * RH).fill(-Infinity);
   color.fill(bg[3] == null ? 255 : bg[3]);
-  for (let i = 0; i < W * H; i++) { color[i*4] = bg[0]; color[i*4+1] = bg[1]; color[i*4+2] = bg[2]; color[i*4+3] = 255; }
+  for (let i = 0; i < RW * RH; i++) { color[i*4] = bg[0]; color[i*4+1] = bg[1]; color[i*4+2] = bg[2]; color[i*4+3] = 255; }
   const aspect = W / H, fov = (camera && camera.fov) || 0.85;
   // 内容包围盒 → 自动相机
   let mnx=1e9,mny=1e9,mnz=1e9,mxx=-1e9,mxy=-1e9,mxz=-1e9;
@@ -252,8 +257,28 @@ export function renderScene(scene, { W = 960, H = 540, camera, assetsDir, assetF
   const size=[mxx-mnx,mxy-mny,mxz-mnz], maxDim=Math.max(...size)||1;
   const center=[(mnx+mxx)/2,(mny+mxy)/2,(mnz+mxz)/2];
   const target = camera && camera.target ? camera.target : center;
-  const dist = camera && camera.dist ? camera.dist : maxDim*1.7/Math.tan(fov/2)*0.5;
+  // 自适应取景：先用已知可工作的初值 d0 投影内容 AABB 的 8 个角点，实测 NDC 幅度，
+  // 再按比例反解距离使内容占画面 ~78%（NDC 随 1/dist 单调缩放，可精确外推）
+  const d0 = maxDim*1.7/Math.tan(fov/2)*0.5;
+  const pv0 = matmul(persp(fov, aspect, 0.05, 600), lookAt([center[0]+d0*0.55, center[1]+d0*0.45, center[2]+d0*0.7], target, [0,1,0]));
+  let ex = 0, ey = 0;
+  for (let i = 0; i < 8; i++) {
+    const v = [(i&1)?mxx:mnx, (i&2)?mxy:mny, (i&4)?mxz:mnz];
+    const qx = pv0[0]*v[0]+pv0[4]*v[1]+pv0[8]*v[2]+pv0[12], qy = pv0[1]*v[0]+pv0[5]*v[1]+pv0[9]*v[2]+pv0[13], qw = pv0[3]*v[0]+pv0[7]*v[1]+pv0[11]*v[2]+pv0[15] || 1;
+    ex = Math.max(ex, Math.abs(qx/qw)); ey = Math.max(ey, Math.abs(qy/qw));
+  }
+  const dist = camera && camera.dist ? camera.dist : Math.max(d0*0.3, d0*Math.max(ex,ey)/0.78);
   const eye = camera && camera.eye ? camera.eye : [center[0]+dist*0.55, center[1]+dist*0.45, center[2]+dist*0.7];
+  // 地面平面：给场景一个落脚基准，消除物体漂浮在虚空中（不参与取景 AABB）
+  if (ground) {
+    const gy = mny - 0.05, gh = Math.max(maxDim*3, 24);
+    // 单个大三角（无内部共享边，避免 z-fighting 接缝）
+    loaded.push({ e: { transform: { position: [0, gy, 0], rotation: [0,0,0], scale: [1,1,1] } }, g: { prims: [{
+      pos: new Float32Array([-gh,0,-gh, gh,0,-gh, 0,0,gh]),
+      nor: new Float32Array([0,1,0, 0,1,0, 0,1,0]),
+      uv: null, idx: new Uint16Array([0,1,2]), tex: null, color: [0.03,0.035,0.052]
+    }] } });
+  }
   const proj = persp(fov, aspect, 0.05, 600);
   const view = lookAt(eye, target, [0,1,0]);
   const pv = matmul(proj, view);
@@ -262,20 +287,21 @@ export function renderScene(scene, { W = 960, H = 540, camera, assetsDir, assetF
     const cy=pv[1]*v[0]+pv[5]*v[1]+pv[9]*v[2]+pv[13];
     const cz=pv[2]*v[0]+pv[6]*v[1]+pv[10]*v[2]+pv[14];
     const cw=pv[3]*v[0]+pv[7]*v[1]+pv[11]*v[2]+pv[15] || 1;
-    return [(cx/cw*0.5+0.5)*W, (1-(cy/cw*0.5+0.5))*H, cz/cw];
+    return [(cx/cw*0.5+0.5)*RW, (1-(cy/cw*0.5+0.5))*RH, cz/cw];
   };
   let trisIn = 0, trisAll = 0;
   // 背面剔除 + 光栅化
-  const light = norm([-0.55,0.72,-0.42]);
+  const light = norm(lightDir);
   for (const { e, g } of loaded) {
     const M = trs(e.transform.position||[0,0,0], e.transform.rotation||[0,0,0], e.transform.scale||[1,1,1]);
     const N = [M[0]*M[0]+M[4]*M[4]+M[8]*M[8], M[1]*M[1]+M[5]*M[5]+M[9]*M[9], M[2]*M[2]+M[6]*M[6]+M[10]*M[10]];
     const Nn = norm(N);
     for (const pr of g.prims) {
-      const vsp=[],vsn=[],vsu=[];
+      const vsp=[],vsn=[],vsu=[],vsw=[];
       for (let k=0;k<pr.pos.length;k+=3){
         const x=pr.pos[k],y=pr.pos[k+1],z=pr.pos[k+2];
-        vsp.push(transform([M[0]*x+M[4]*y+M[8]*z+M[12], M[1]*x+M[5]*y+M[9]*z+M[13], M[2]*x+M[6]*y+M[10]*z+M[14]]));
+        const wx=M[0]*x+M[4]*y+M[8]*z+M[12], wy=M[1]*x+M[5]*y+M[9]*z+M[13], wz=M[2]*x+M[6]*y+M[10]*z+M[14];
+        vsp.push(transform([wx, wy, wz])); vsw.push([wx, wy, wz]);
         const nx=pr.nor[k],ny=pr.nor[k+1],nz=pr.nor[k+2];
         // 法线随模型矩阵线性部分变换（列主序：与位置变换同一约定）
         const mnx0 = M[0]*nx + M[4]*ny + M[8]*nz,
@@ -289,20 +315,37 @@ export function renderScene(scene, { W = 960, H = 540, camera, assetsDir, assetF
         const a=pr.idx[i],b=pr.idx[i+1],c=pr.idx[i+2];
         const pa=vsp[a],pb=vsp[b],pc=vsp[c];
         trisAll++;
-        const s0=(pb[0]-pa[0])*(pc[1]-pa[1])-(pb[1]-pa[1])*(pc[0]-pa[0]);
-        if (pa[0]<W+50&&pa[0]>-50&&pb[0]<W+50&&pb[0]>-50&&pc[0]<W+50&&pc[0]>-50&&pa[1]<H+50&&pa[1]>-50&&pb[1]<H+50&&pb[1]>-50&&pc[1]<H+50&&pc[1]>-50) trisIn++;
-        raster(color, depth, W, H, {
+        // 背面剔除：世界空间平均法线 · (eye - 重心)，与三角绕序无关（兼容 CW/CCW 资产）
+        const fnx=(vsn[a][0]+vsn[b][0]+vsn[c][0])/3, fny=(vsn[a][1]+vsn[b][1]+vsn[c][1])/3, fnz=(vsn[a][2]+vsn[b][2]+vsn[c][2])/3;
+        const cwx=(vsw[a][0]+vsw[b][0]+vsw[c][0])/3, cwy=(vsw[a][1]+vsw[b][1]+vsw[c][1])/3, cwz=(vsw[a][2]+vsw[b][2]+vsw[c][2])/3;
+        if (fnx*(eye[0]-cwx) + fny*(eye[1]-cwy) + fnz*(eye[2]-cwz) <= 0) { continue; }
+        if (pa[0]<RW+50&&pa[0]>-50&&pb[0]<RW+50&&pb[0]>-50&&pc[0]<RW+50&&pc[0]>-50&&pa[1]<RH+50&&pa[1]>-50&&pb[1]<RH+50&&pb[1]>-50&&pc[1]<RH+50&&pc[1]>-50) trisIn++;
+        raster(color, depth, RW, RH, {
           ax: pa[0], ay: pa[1], az: pa[2], bx: pb[0], by: pb[1], bz: pb[2], cx: pc[0], cy: pc[1], cz: pc[2],
           nax: vsn[a][0], nay: vsn[a][1], naz: vsn[a][2],
           nbx: vsn[b][0], nby: vsn[b][1], nbz: vsn[b][2],
           ncx: vsn[c][0], ncy: vsn[c][1], ncz: vsn[c][2],
           ua: vsu[a][0], va: vsu[a][1], ub: vsu[b][0], vb: vsu[b][1], uc: vsu[c][0], vc: vsu[c][1],
-          tex: pr.tex ? pr.tex.data : null, tw: pr.tex ? pr.tex.w : 0, th: pr.tex ? pr.tex.h : 0, c: pr.color, gain: exposure, tone: tone
+          tex: pr.tex ? pr.tex.data : null, tw: pr.tex ? pr.tex.w : 0, th: pr.tex ? pr.tex.h : 0, c: pr.color, gain: exposure, tone: tone,
+          lx: -light[0], ly: -light[1], lz: -light[2]
         });      }
     }
   }
+  // SS×SS 降采样到目标画布（2x2 平均 = 2 倍超采样抗锯齿）
+  const out = new Uint8Array(W * H * 4);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let r = 0, g2 = 0, b2 = 0;
+    for (let dy = 0; dy < SS; dy++) for (let dx = 0; dx < SS; dx++) { const o = ((y*SS+dy)*RW + x*SS+dx) * 4; r += color[o]; g2 += color[o+1]; b2 += color[o+2]; }
+    const n = SS*SS, o = (y*W+x)*4;
+    out[o] = (r/n)|0; out[o+1] = (g2/n)|0; out[o+2] = (b2/n)|0; out[o+3] = 255;
+  }
   let shaded = 0;
-  for (let i = 0; i < W * H; i++) { if (color[i*4] !== bg[0] || color[i*4+1] !== bg[1] || color[i*4+2] !== bg[2]) shaded++; }
+  for (let i = 0; i < W * H; i++) {
+    if (out[i*4] !== bg[0] || out[i*4+1] !== bg[1] || out[i*4+2] !== bg[2]) { shaded++; continue; }
+    // 未被几何覆盖 → 天空：顶部到地平线的暗部渐变，避免大片死平背景
+    const t = H > 1 ? ((i / W) | 0) / (H - 1) : 0, k = 1 - 0.55 * t;
+    out[i*4] = (bg[0]*k)|0; out[i*4+1] = (bg[1]*k)|0; out[i*4+2] = (bg[2]*k)|0;
+  }
 
-  return { ok:true, shaded, trisIn, trisAll, ms: Date.now() - t0, png: pngEncode(W,H,color), width:W, height:H, bbox:[mnx,mny,mnz,mxx,mxy,mxz], camera:{eye,target,dist:Math.hypot(eye[0]-target[0],eye[1]-target[1],eye[2]-target[2])}, rendered: loaded.length };
+  return { ok:true, shaded, trisIn, trisAll, ms: Date.now() - t0, ss: SS, png: pngEncode(W,H,out), width:W, height:H, bbox:[mnx,mny,mnz,mxx,mxy,mxz], camera:{eye,target,dist:Math.hypot(eye[0]-target[0],eye[1]-target[1],eye[2]-target[2])}, rendered: loaded.length };
 }
