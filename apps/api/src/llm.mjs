@@ -39,7 +39,7 @@ export function defaultPlan(brief) {
   ];
 }
 
-export function createLLM({ provider, baseUrl, apiKey, model, brief }) {
+export function createLLM({ provider, baseUrl, apiKey, model, brief, plan }) {
   if (provider === 'llm') return new LLMClient({ baseUrl, apiKey, model });
-  return new MockLLM(defaultPlan(brief));
+  return new MockLLM(plan || defaultPlan(brief));
 }

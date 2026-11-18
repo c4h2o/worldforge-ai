@@ -9,6 +9,7 @@ export const TOOL_DEFS = [
   { type: 'function', function: { name: 'canvas.layout', description: '按语义规范做世界布局摆放。', parameters: { type: 'object', properties: { brief: { type: 'string' } }, required: ['brief'] } } },
   { type: 'function', function: { name: 'critic.review', description: '审美/一致性检查，给出评分与问题。', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'export.game', description: '导出可玩场景（glTF+场景JSON）。', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'export.film', description: '生成镜头序列并导出成片（浏览器渲染）。', parameters: { type: 'object', properties: {} } } },
 ];
 
 export function systemPrompt(brief) {

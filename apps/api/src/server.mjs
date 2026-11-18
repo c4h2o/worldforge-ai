@@ -100,6 +100,27 @@ async function processTask(id) {
 // ── 世界画布：AI 布局摆放（网格 + 分区）───────────────
 function persistScene(scene) { fs.writeFileSync(path.join(SCENES_DIR, scene.id + '.json'), JSON.stringify(scene, null, 2)); }
 
+function autoShots(scene) {
+  const ents = scene.scene_graph.entities || [];
+  const shots = [];
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2;
+    shots.push({ id: 'shot_orbit_' + i, name: '环绕 ' + (i + 1) + '/4', camera: { position: [Math.cos(a) * 9, 3.5, Math.sin(a) * 9], target: [0, 1, 0] }, duration: 3, move: { type: 'orbit', speed: 0.5 } });
+  }
+  for (let i = 0; i < Math.min(ents.length, 6); i++) {
+    const e = ents[i], p = e.transform.position;
+    shots.push({ id: 'shot_close_' + i, name: '特写 ' + (e.semantic_role || e.asset_id), camera: { position: [p[0] + 2.2, 2.2, p[2] + 2.2], target: [p[0], 1, p[2]] }, duration: 2.5 });
+  }
+  return shots;
+}
+
+function filmForScene(scene) {
+  if (scene.film) return scene.film;
+  const shots = autoShots(scene);
+  const film = { id: 'film_' + scene.id, name: scene.name + ' — 成片', fps: 30, shots, duration: shots.reduce((a, s) => a + (s.duration || 3), 0), status: 'ready', created_at: new Date().toISOString() };
+  scene.film = film; persistScene(scene); return film;
+}
+
 function placeEntities(assetIds) {
   return assetIds.map((aid, i) => {
     const col = i % 4, row = Math.floor(i / 4);
@@ -164,7 +185,8 @@ export function createApp(options = {}) {
     },
     'canvas.layout': async (args, ctx) => { const scene = await createScene(args.brief || ctx.brief); return { result: { scene_id: scene.id, entities: scene.scene_graph.entities.length, style: scene.style } }; },
     'critic.review': async () => { const score = assets.size >= 3 ? 82 : 55; return { result: { score, ok: score >= 70, issues: score >= 70 ? [] : ['资产数量不足 3'] } }; },
-    'export.game': async () => { const scene = [...scenes.values()][0]; if (scene) fs.writeFileSync(path.join(OUT, 'scene.json'), JSON.stringify(scene, null, 2)); return { result: { path: 'output/scene.json', scene_id: scene && scene.id } }; },
+    'export.game': async () => { const scene = [...scenes.values()].at(-1); if (scene) fs.writeFileSync(path.join(OUT, 'scene.json'), JSON.stringify(scene, null, 2)); return { result: { path: 'output/scene.json', scene_id: scene && scene.id } }; },
+    'export.film': async () => { const scene = [...scenes.values()].at(-1); if (!scene) throw new Error('先创建场景'); const film = filmForScene(scene); return { result: { film_id: film.id, shots: film.shots.length, duration: film.duration, player: '/film.html?id=' + scene.id } }; },
   };
 
   const server = http.createServer(async (req, res) => {
@@ -242,11 +264,17 @@ export function createApp(options = {}) {
         return s ? json(res, 200, s) : json(res, 404, { error: 'scene not found' });
       }
 
+      if (p === '/film.html' && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(filmHtml()); }
+      const filmRe = p.match(/^\/api\/scenes\/([^/]+)\/film$/);
+      if (filmRe && (req.method === 'GET' || req.method === 'POST')) {
+        const scene = scenes.get(filmRe[1]); if (!scene) return json(res, 404, { error: 'scene not found' });
+        return json(res, 200, filmForScene(scene));
+      }
       if (p === '/api/agent/tools' && req.method === 'GET') return json(res, 200, { tools: TOOL_DEFS });
       if (p === '/api/agent/run' && req.method === 'POST') {
         const b = await readBody(req);
         let llm;
-        try { llm = createLLM({ provider: b.provider || process.env.AGENT_PROVIDER || 'mock', baseUrl: process.env.LLM_BASE_URL, apiKey: b.apiKey || process.env.LLM_API_KEY, model: b.model || process.env.LLM_MODEL, brief: b.brief }); }
+        try { llm = createLLM({ provider: b.provider || process.env.AGENT_PROVIDER || 'mock', baseUrl: process.env.LLM_BASE_URL, apiKey: b.apiKey || process.env.LLM_API_KEY, model: b.model || process.env.LLM_MODEL, brief: b.brief, plan: b.plan }); }
         catch (e) { return json(res, 400, { error: String(e && e.message || e) }); }
         const out = await runAgent({ brief: b.brief || DEFAULT_BRIEF, llm, dispatch });
         return json(res, 200, out);
@@ -412,6 +440,96 @@ addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updat
 (function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene,camera); })();
 </script></body></html>`;
 }
+
+function filmHtml(){ return `<!doctype html><html><head><meta charset="utf-8"><title>WorldForge — Film Player</title>
+<style>
+html,body{margin:0;height:100%;background:#05070f;color:#cfe;font-family:monospace;overflow:hidden}
+#hud{position:fixed;top:8px;left:8px;font-size:12px;background:#0009;padding:8px 12px;border-radius:8px;z-index:10;line-height:1.5}
+#hud .t{color:#5df}#hud .k{color:#f5a}
+#bar{position:fixed;bottom:0;left:0;right:0;height:64px;background:#000c;z-index:10;display:flex;align-items:center;gap:10px;padding:0 14px;font-size:13px}
+#bar button{background:#1a2a44;color:#cfe;border:1px solid #345;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px}
+#bar button:hover{background:#2a3a54}
+#bar button.rec{background:#a22;border-color:#c55}
+#bar button.rec.on{background:#f33;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.4}}
+#prog{flex:1;height:6px;background:#123;border-radius:3px;overflow:hidden}
+#prog i{display:block;height:100%;background:#5df;width:0}
+#time{color:#8af;min-width:120px}
+#dl{color:#5df;text-decoration:none}
+#loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#5df;z-index:20;font-size:15px}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script></head>
+<body><div id="hud"></div><div id="bar"><button id="play">播放</button><button id="rec" class="rec">● 录制</button><div id="prog"><i></i></div><span id="time">0.0s / 0.0s</span><a id="dl" download="worldforge_film.webm">下载成片</a></div><div id="loading">loading film…</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const q = new URLSearchParams(location.search); const sceneId = q.get('id') || '';
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#05070f'); scene.fog = new THREE.Fog('#05070f', 20, 90);
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 300);
+const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true}); renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(1); document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0x8899ff,0x223,0.6));
+const dir=new THREE.DirectionalLight(0xff2a6d,1.2); dir.position.set(5,8,4); scene.add(dir);
+scene.add(new THREE.GridHelper(40,40,0x2af,0x145));
+const loader = new GLTFLoader();
+
+let world=null, film=null, assetCache=new Map(), curShot=-1, shotStartCam=new THREE.Vector3();
+let playing=false, tGlobal=0, lastT=performance.now();
+const state = { recording:false, rec:null, chunks:[] };
+
+function el(tag, attrs, parent){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ if(k==='text') e.textContent=attrs[k]; else if(k==='on'){ for(const ev in attrs[k]) e.addEventListener(ev, attrs[k][ev]); } else e[k]=attrs[k]; } if(parent) parent.appendChild(e); return e; }
+async function jget(u){ return (await fetch(u)).json(); }
+
+async function getMesh(aid){ if(assetCache.has(aid)) return assetCache.get(aid); const g = await new Promise((ok,err)=>loader.load('/assets/'+aid+'.glb',ok,undefined,err)); assetCache.set(aid,g); return g; }
+
+async function boot(){
+  world = await jget('/api/scenes/'+sceneId);
+  film = await jget('/api/scenes/'+sceneId+'/film');
+  document.getElementById('loading').style.display='none';
+  const env = (world.scene_graph.environment||{});
+  if(env.sky){ scene.background.set(env.sky); scene.fog.color.set(env.sky); }
+  const lights = world.scene_graph.lights||[];
+  for(const L of lights){ if(L.type==='hemisphere'){ scene.children[0].color.set(L.color||'#8899ff'); scene.children[0].intensity=L.intensity||0.6; } if(L.type==='directional'){ dir.color.set(L.color||'#ff2a6d'); dir.intensity=L.intensity||1.2; } }
+  for(const e of world.scene_graph.entities){ try{ const m=(await getMesh(e.asset_id)).scene.clone(); m.position.set(...e.transform.position); m.rotation.set(...e.transform.rotation); m.scale.set(...e.transform.scale); scene.add(m); }catch(_){} }
+  const hud = document.getElementById('hud');
+  hud.innerHTML = '<div class="t">WorldForge AI · 成片</div>场景 <span class="k">'+world.name+'</span> · 镜头 <span class="k">'+film.shots.length+'</span> · 时长 <span class="k">'+film.duration.toFixed(1)+'s</span><br>'+film.shots.map(s=>s.name).join(' → ');
+}
+
+function updateCamera(){
+  let acc=0, shot=film.shots[0], st=0, idx=0;
+  for(let i=0;i<film.shots.length;i++){ if(tGlobal < acc+film.shots[i].duration){ shot=film.shots[i]; st=tGlobal-acc; idx=i; break; } acc+=film.shots[i].duration; }
+  if(idx!==curShot){ curShot=idx; shotStartCam.copy(camera.position); }
+  const pos=shot.camera.position, tgt=shot.camera.target, lead=0.8;
+  let camPos;
+  if(shot.move && shot.move.type==='orbit'){ const ang=st*(shot.move.speed||0.4); const r=Math.hypot(pos[0],pos[2]); camPos=new THREE.Vector3(Math.cos(ang)*r,pos[1],Math.sin(ang)*r); }
+  else { camPos=new THREE.Vector3().lerpVectors(shotStartCam, new THREE.Vector3(pos[0],pos[1],pos[2]), Math.min(st/lead,1)); }
+  camera.position.copy(camPos); camera.lookAt(tgt[0],tgt[1],tgt[2]);
+  document.getElementById('hud').lastChild.textContent = '';
+}
+
+function tick(now){
+  const dt=(now-lastT)/1000; lastT=now;
+  if(playing){ tGlobal+=dt; if(tGlobal>film.duration){ tGlobal=film.duration; playing=false; document.getElementById('play').textContent='重播'; } }
+  updateCamera();
+  renderer.render(scene,camera);
+  document.getElementById('prog').firstElementChild.style.width = (tGlobal/film.duration*100)+'%';
+  document.getElementById('time').textContent = tGlobal.toFixed(1)+'s / '+film.duration.toFixed(1)+'s';
+  requestAnimationFrame(tick);
+}
+
+document.getElementById('play').addEventListener('click', function(){ if(tGlobal>=film.duration){ tGlobal=0; curShot=-1; } playing=!playing; this.textContent = playing?'暂停':'播放'; lastT=performance.now(); });
+const recBtn=document.getElementById('rec');
+recBtn.addEventListener('click', function(){
+  if(!state.recording){ state.chunks=[]; const stream=renderer.domElement.captureStream(30); state.rec=new MediaRecorder(stream,{mimeType:'video/webm'}); state.rec.ondataavailable=e=>{ if(e.data.size) state.chunks.push(e.data); }; state.rec.onstop=()=>{ const blob=new Blob(state.chunks,{type:'video/webm'}); document.getElementById('dl').href=URL.createObjectURL(blob); }; state.rec.start(); state.recording=true; this.classList.add('on'); this.textContent='■ 停止'; tGlobal=0; curShot=-1; playing=true; document.getElementById('play').textContent='暂停'; lastT=performance.now(); }
+  else { state.rec.stop(); state.recording=false; this.classList.remove('on'); this.textContent='● 录制'; playing=false; }
+});
+
+boot();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+requestAnimationFrame(tick);
+</script></body></html>`;
+}
+
 
 // 直接运行
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
