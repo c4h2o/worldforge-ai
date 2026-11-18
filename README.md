@@ -65,7 +65,7 @@ node apps/demo/src/run-demo.mjs "一座雨夜赛博朋克港"
 
 **MVP 服务端**（异步任务 API + 世界画布，零依赖）：
 ```bash
-npm run dev        # 打开 http://localhost:3000（世界画布）
+npm run dev        # 打开 http://localhost:4321（世界画布）
 # API: POST /api/generation/image-to-model → {task_id}; GET /api/tasks/:id
 ```
 

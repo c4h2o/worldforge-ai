@@ -533,6 +533,6 @@ requestAnimationFrame(tick);
 
 // 直接运行
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const port = Number(process.env.PORT || 3000);
+  const port = Number(process.env.PORT || 4321);
   createApp().listen(port, () => console.log('WorldForge MVP API → http://localhost:' + port + '  (world canvas: /)'));
 }

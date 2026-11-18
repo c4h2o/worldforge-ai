@@ -7,7 +7,7 @@
 
 ```bash
 npm run dev        # = node apps/api/src/server.mjs  （零依赖，无需 install）
-# 打开 http://localhost:3000  →  世界画布（自动创建默认场景）
+# 打开 http://localhost:4321  →  世界画布（自动创建默认场景）
 ```
 
 ## 2. 异步任务模型（学 Tripo）
@@ -73,7 +73,7 @@ packages/orchestrator/    # AI 编排 + 审美批评
 ```bash
 # 真实 LLM 驱动
 AGENT_PROVIDER=llm LLM_API_KEY=sk-... npm run dev
-curl -s -X POST http://localhost:3000/api/agent/run -H 'Content-Type: application/json' \
+curl -s -X POST http://localhost:4321/api/agent/run -H 'Content-Type: application/json' \
   -d '{"provider":"llm","brief":"一座雨夜赛博朋克港口"}'
 ```
 
