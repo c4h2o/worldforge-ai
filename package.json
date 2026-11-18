@@ -1,0 +1,20 @@
+{
+  "name": "worldforge-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-driven virtual world asset factory: semantic → image → 3D → asset library → world canvas.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "demo": "node apps/demo/src/run-demo.mjs",
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit -p tsconfig.base.json"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "SEE LICENSE IN LICENSE"
+}

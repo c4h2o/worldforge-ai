@@ -1,0 +1,23 @@
+# deps
+node_modules/
+.pnpm-store/
+# build
+dist/
+build/
+*.tsbuildinfo
+# env / secrets
+.env
+.env.*
+!.env.example
+# runtime output
+output/
+*.log
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+# docker volumes
+pgdata/
+redisdata/
+miniodata/
