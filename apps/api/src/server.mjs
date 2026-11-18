@@ -415,9 +415,10 @@ export function createApp(options = {}) {
         persistScene(scene); return json(res, 200, { deleted: entRe[2] });
       }
 
-      if (p.startsWith('/api/scenes/') && req.method === 'GET') {
-        const s = scenes.get(p.slice('/api/scenes/'.length));
-        return s ? json(res, 200, s) : json(res, 404, { error: 'scene not found' });
+      const sceneGetRe = p.match(/^\/api\/scenes\/([^/]+)$/);
+      if (sceneGetRe && req.method === 'GET') {
+        const sc = scenes.get(sceneGetRe[1]);
+        return sc ? json(res, 200, sc) : json(res, 404, { error: 'scene not found' });
       }
 
       if (p === '/api/images/generate' && req.method === 'POST') {

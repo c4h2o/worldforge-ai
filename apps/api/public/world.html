@@ -1,7 +1,27 @@
 <!doctype html><html><head><meta charset="utf-8"><title>WorldForge — 世界画布</title>
-<style>html,body{margin:0;height:100%;background:#0b1020;color:#cfe;font-family:monospace;overflow:hidden}#gl{display:block;width:100%;height:100%}#hud{position:fixed;top:8px;left:8px;font-size:12px;background:#0009;padding:6px 10px;border-radius:6px;line-height:1.5}#err{position:fixed;bottom:8px;left:8px;font-size:11px;color:#f88;background:#0009;padding:4px 8px;border-radius:4px;display:none}</style></head><body>
+<style>
+html,body{margin:0;height:100%;background:#0b1020;color:#cfe;font-family:monospace;overflow:hidden}
+#gl{display:block;width:100%;height:100%}
+#hud{position:fixed;top:8px;left:8px;font-size:12px;background:#0009;padding:6px 10px;border-radius:6px;line-height:1.5;z-index:2}
+#err{position:fixed;bottom:8px;left:8px;font-size:11px;color:#f88;background:#0009;padding:4px 8px;border-radius:4px;display:none;z-index:2}
+#critic{position:fixed;top:8px;right:8px;width:300px;max-height:calc(100% - 16px);overflow:auto;font-size:12px;background:#000a;border:1px solid #234;border-radius:8px;padding:10px 12px;z-index:2;display:none}
+#critic h3{margin:0 0 6px;font-size:12px;color:#8cf}
+#critic .score{font-size:22px;color:#8f8}
+#critic .badge{font-size:11px;margin-left:8px}
+#critic ul{list-style:none;margin:8px 0 0;padding:0}
+#critic li{padding:4px 6px;border-radius:4px;margin-bottom:4px;line-height:1.4;font-size:11px}
+#critic li.high{background:#512208;color:#fca}
+#critic li.medium{background:#4a3608;color:#fdb}
+#critic li.low{background:#123044;color:#bdf}
+#critic li.ok{background:#123a1c;color:#aeb}
+#critic li b{opacity:.65;font-weight:normal}
+#autofix{margin-top:10px;width:100%;font-family:inherit;font-size:12px;padding:7px;border:none;border-radius:6px;background:#0a5;color:#041;cursor:pointer}
+#autofix:disabled{opacity:.5;cursor:wait}
+#critic .hint{color:#89a;font-size:10px;margin-top:8px}
+</style></head><body>
 <canvas id="gl"></canvas>
 <div id="hud">WorldForge 世界画布 · 零依赖 WebGL<br><span id="info">加载中…</span><br>左键旋转 · 滚轮缩放 · 右键平移</div>
+<div id="critic"><h3>批评器 · 四维审查</h3><span class="score" id="criticScore">–</span><span class="badge" id="criticBadge"></span><ul id="criticIssues"></ul><button id="autofix">一键自修复（生成→批评→修正）</button><div class="hint">越界夹回 · 重叠分离 · 比例归一 · 补灯 · 缺失实体复用资产</div></div>
 <div id="err"></div>
 <script type="module" src="/world.mjs"></script>
 </body></html>
