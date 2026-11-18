@@ -32,6 +32,8 @@ jobs:
           curl -sf -X POST http://localhost:3000/api/scenes -H 'Content-Type: application/json' -d '{"brief":"一座雨夜赛博朋克港口"}' | grep -q 'scene_graph'
           curl -sf http://localhost:3000/api/assets | grep -q '"assets"'
           curl -sf http://localhost:3000/ | grep -q 'World Canvas'
+          curl -sf http://localhost:3000/api/agent/tools | grep -q 'semantic.parse'
+          curl -sf -X POST http://localhost:3000/api/agent/run -H 'Content-Type: application/json' -d '{"provider":"mock","brief":"港口"}' | grep -q 'LLM 完成'
           echo "✅ MVP API OK"
       - name: TypeScript packages are present
         run: |

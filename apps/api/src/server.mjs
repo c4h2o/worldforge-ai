@@ -9,6 +9,8 @@ import { parseBrief, DEFAULT_BRIEF, categoryColor, boxesForCategory } from '../.
 import { buildGLB } from '../../demo/src/glb.mjs';
 import { conceptImage } from '../../demo/src/png.mjs';
 import { createProvider, downloadModel, sleep } from './providers.mjs';
+import { runAgent, TOOL_DEFS } from './agent.mjs';
+import { createLLM } from './llm.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(process.cwd(), 'output');
@@ -143,6 +145,26 @@ export function createApp(options = {}) {
   ensureDirs();
   try { activeProvider = createProvider(options.provider || process.env.IMG3D_PROVIDER || 'mock', process.env); providerError = null; }
   catch (e) { activeProvider = createProvider('mock', process.env); providerError = String(e && e.message || e); }
+  // AI 接口分发（编排智能体 → 真实管线）
+  const dispatch = {
+    'semantic.parse': async (args, ctx) => ({ result: parseBrief(args.brief || ctx.brief) }),
+    'image.generateFromSpec': async (args, ctx) => ({ result: { note: '概念图生成（语义驱动）', entities: parseBrief(args.spec && args.spec.brief || ctx.brief).entities.length } }),
+    'img3d.fromImage': async (args) => {
+      const { task_id, done } = enqueue('image-to-model', { input: args.input || ('semantic:' + (args.category || 'prop')), category: args.category });
+      await done;
+      const a = assets.get(task_id);
+      return { result: { task_id, asset_id: task_id, model_url: a && a.local_path, category: a && a.category } };
+    },
+    'asset.ingest': async (args) => {
+      const a = assets.get(args.asset_id);
+      if (a && Array.isArray(args.tags)) a.semantic_tags = [...new Set([...a.semantic_tags, ...args.tags])];
+      return { result: { asset_id: args.asset_id, tags: a && a.semantic_tags } };
+    },
+    'canvas.layout': async (args, ctx) => { const scene = await createScene(args.brief || ctx.brief); return { result: { scene_id: scene.id, entities: scene.scene_graph.entities.length, style: scene.style } }; },
+    'critic.review': async () => { const score = assets.size >= 3 ? 82 : 55; return { result: { score, ok: score >= 70, issues: score >= 70 ? [] : ['资产数量不足 3'] } }; },
+    'export.game': async () => { const scene = [...scenes.values()][0]; if (scene) fs.writeFileSync(path.join(OUT, 'scene.json'), JSON.stringify(scene, null, 2)); return { result: { path: 'output/scene.json', scene_id: scene && scene.id } }; },
+  };
+
   const server = http.createServer(async (req, res) => {
     const u = new URL(req.url || '/', 'http://x');
     const p = u.pathname;
@@ -177,6 +199,16 @@ export function createApp(options = {}) {
       if (p.startsWith('/api/scenes/') && req.method === 'GET') {
         const s = scenes.get(p.slice('/api/scenes/'.length));
         return s ? json(res, 200, s) : json(res, 404, { error: 'scene not found' });
+      }
+
+      if (p === '/api/agent/tools' && req.method === 'GET') return json(res, 200, { tools: TOOL_DEFS });
+      if (p === '/api/agent/run' && req.method === 'POST') {
+        const b = await readBody(req);
+        let llm;
+        try { llm = createLLM({ provider: b.provider || process.env.AGENT_PROVIDER || 'mock', baseUrl: process.env.LLM_BASE_URL, apiKey: b.apiKey || process.env.LLM_API_KEY, model: b.model || process.env.LLM_MODEL, brief: b.brief }); }
+        catch (e) { return json(res, 400, { error: String(e && e.message || e) }); }
+        const out = await runAgent({ brief: b.brief || DEFAULT_BRIEF, llm, dispatch });
+        return json(res, 200, out);
       }
 
       // 世界画布页

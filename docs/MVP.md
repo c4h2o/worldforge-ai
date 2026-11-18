@@ -56,7 +56,24 @@ packages/orchestrator/    # AI 编排 + 审美批评
 - **资产库**：`Map<id, Asset>`，含语义标签、来源链、缩略图；生产持久化到 Postgres + S3。
 - **世界画布**：`POST /api/scenes` 内部对每个语义实体提交生 3D 任务并摆放（网格/分区），前端 Three.js 加载 GLB 呈现。
 
-## 6. 生产路径（升级为 Fastify + BullMQ + Postgres/Redis）
+## 6. AI 编排智能体（LLM Function Calling）
+
+> 让 **LLM 自主决定**调用哪些 AI 接口、传什么参，服务端分发到真实管线，循环直到 LLM 说完成。零依赖，`fetch` 即可。
+
+- `POST /api/agent/run {brief, provider:'mock'|'llm', apiKey?, model?}` → `{log[], messages[], scene_id}`。`provider='mock'` 用 **MockLLM**（离线脚本，CI/无 key 联调）；`'llm'` 走 OpenAI 兼容 `chat/completions` + `tools`（Function Calling）。
+- `GET /api/agent/tools` → 工具清单（MCP 风格发现）：`semantic.parse / image.generateFromSpec / img3d.fromImage / asset.ingest / canvas.layout / critic.review / export.game`。
+- **Agent 循环**：LLM 返回 `tool_calls` → 服务端 `dispatch[工具名]` 执行并回填结果 → 再交给 LLM；无 `tool_calls` 即完成。
+- **人机门禁**：工具可返回 `needs_approval:true`，Agent 把它透传给调用方，用户确认后继续（风格/内容/合规人工把关）。
+- **环境变量**：`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`、`AGENT_PROVIDER=mock|llm`。
+
+```bash
+# 真实 LLM 驱动
+AGENT_PROVIDER=llm LLM_API_KEY=sk-... npm run dev
+curl -s -X POST http://localhost:3000/api/agent/run -H 'Content-Type: application/json' \
+  -d '{"provider":"llm","brief":"一座雨夜赛博朋克港口"}'
+```
+
+## 7. 生产路径（升级为 Fastify + BullMQ + Postgres/Redis）（升级为 Fastify + BullMQ + Postgres/Redis）
 
 当前零依赖版本适合 Demo/联调；规模化为生产时按以下结构替换（**接口已抽象，业务不动**）：
 
@@ -76,7 +93,7 @@ apps/worker/     # BullMQ Worker（消费生成任务，调 ImageTo3DProvider，
 - 存储：`PostgreSQL`（任务/资产/场景元数据）+ `S3/MinIO`（GLB/PNG/渲染）。
 - 一致性：`idempotency_key` 防重复提交；失败对账；`Webhook` 回调（可选）。
 
-## 7. 下一步
+## 8. 下一步
 
 - [ ] 接真实 `TripoProvider`（`TRIPO_API_KEY`）或 `SelfHostProvider`（TripoSR/SG/SF）验证质量。
 - [ ] 编排智能体接 LLM Function Calling / MCP（`packages/orchestrator` 已就绪）。
