@@ -11,6 +11,7 @@ import { conceptImage } from '../../demo/src/png.mjs';
 import { createProvider, downloadModel, sleep } from './providers.mjs';
 import { getUnits } from './units.mjs';
 import { runAgent, TOOL_DEFS } from './agent.mjs';
+import { reviewScene } from './critic.mjs';
 import { createLLM } from './llm.mjs';
 import { createImageProvider } from './image-providers.mjs';
 
@@ -234,6 +235,21 @@ function placeEntities(assetIds, specEntities = []) {
   });
 }
 
+// 自动拟合主分区包围盒（实体世界包围盒 + 2 单位余量）
+function autoZone(entities = []) {
+  if (!entities.length) return [{ id: 'zone_main', name: '主区', bounds: [-6, 0, -6, 6, 8, 6] }];
+  let mnx = Infinity, mny = Infinity, mnz = Infinity, mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
+  for (const e of entities) {
+    const ext = assetExtent(e.asset_id || e.id);
+    const [px, py, pz] = e.transform.position || [0, 0, 0];
+    const [sx, sy, sz] = e.transform.scale || [1, 1, 1];
+    mnx = Math.min(mnx, px - ext[0] * sx / 2); mxx = Math.max(mxx, px + ext[0] * sx / 2);
+    mny = Math.min(mny, py - ext[1] * sy / 2); mxy = Math.max(mxy, py + ext[1] * sy / 2);
+    mnz = Math.min(mnz, pz - ext[2] * sz / 2); mxz = Math.max(mxz, pz + ext[2] * sz / 2);
+  }
+  const g = 2;
+  return [{ id: 'zone_main', name: '主区', bounds: [mnx - g, Math.min(0, mny), mnz - g, mxx + g, Math.max(8, mxy + g), mxz + g] }];
+}
 async function createScene(brief, specOverride) {
   const spec = (specOverride && specOverride.entities) ? specOverride : parseBrief(brief);
   const ids = [];
@@ -254,7 +270,7 @@ async function createScene(brief, specOverride) {
         { type: 'directional', color: '#ff2a6d', intensity: 1.2, position: [5, 8, 4] },
       ],
       cameras: [{ id: 'cam_main', position: [7, 7, 10], target: [0, 1, 0] }],
-      zones: [{ id: 'zone_main', name: '主区', bounds: [-2, 0, -2, 10, 8, 10] }],
+      zones: autoZone(placeEntities(ids, spec.entities)),
       entities: placeEntities(ids, spec.entities),
     },
     status: 'draft',
@@ -308,7 +324,7 @@ export function createApp(options = {}) {
       return { result: { asset_id: args.asset_id, tags: a && a.semantic_tags } };
     },
     'canvas.layout': async (args, ctx) => { const scene = await createScene(args.brief || ctx.brief, args.spec); return { result: { scene_id: scene.id, entities: scene.scene_graph.entities.length, style: scene.style, note: '实体物理尺寸已按 SI 约束缩放（见 system.units）' } }; },
-    'critic.review': async () => { const score = assets.size >= 3 ? 82 : 55; return { result: { score, ok: score >= 70, issues: score >= 70 ? [] : ['资产数量不足 3'] } }; },
+    'critic.review': async (args) => { const scene = [...scenes.values()].at(-1); if (!scene) throw new Error('先创建场景'); const spec = args.spec || (scene.brief ? parseBrief(scene.brief) : null); const r = reviewScene(scene, { extentFor: assetExtent, spec }); return { result: { scene_id: scene.id, entities: scene.scene_graph.entities.length, ...r } }; },
     'export.game': async () => { const scene = [...scenes.values()].at(-1); if (scene) fs.writeFileSync(path.join(OUT, 'scene.json'), JSON.stringify(scene, null, 2)); return { result: { path: 'output/scene.json', scene_id: scene && scene.id } }; },
     'export.film': async () => { const scene = [...scenes.values()].at(-1); if (!scene) throw new Error('先创建场景'); const film = filmForScene(scene); return { result: { film_id: film.id, shots: film.shots.length, duration: film.duration, player: '/film.html?id=' + scene.id } }; },
   };
@@ -406,6 +422,13 @@ export function createApp(options = {}) {
       if (p === '/film.html' && req.method === 'GET') { const data = fs.readFileSync(FILM_HTML); res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(data); }
       if (p === '/film.mjs') { const data = fs.readFileSync(FILM_JS); res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(data); }
       if (p === '/renderer.mjs') { const data = fs.readFileSync(RENDERER_JS); res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(data); }
+      const criticRe = p.match(/^\/api\/scenes\/([^/]+)\/critic$/);
+      if (criticRe && (req.method === 'GET' || req.method === 'POST')) {
+        const sc = scenes.get(criticRe[1]);
+        if (!sc) return json(res, 404, { error: '场景不存在' });
+        const spec = parseBrief(sc.brief || '');
+        return json(res, 200, { scene_id: sc.id, entities: sc.scene_graph.entities.length, ...reviewScene(sc, { extentFor: assetExtent, spec }) });
+      }
       const filmRe = p.match(/^\/api\/scenes\/([^/]+)\/film$/);
       if (filmRe && (req.method === 'GET' || req.method === 'POST')) {
         const scene = scenes.get(filmRe[1]); if (!scene) return json(res, 404, { error: 'scene not found' });

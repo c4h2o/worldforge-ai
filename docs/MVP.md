@@ -30,6 +30,7 @@ npm run dev        # = node apps/api/src/server.mjs  （零依赖，无需 insta
 | POST | `/api/scenes` | 创建世界场景（语义→任务→摆放） | `{brief}` | WorldScene |
 | GET | `/api/scenes` | 场景列表 | — | `{scenes[]}` |
 | GET | `/api/scenes/:id` | 场景详情 | — | WorldScene |
+| POST | `/api/scenes/:id/critic` | **批评器审查**（量纲/布局/语义/光照） | — | `{score, ok, issues[], suggestions[]}` |
 | GET | `/api/system/units` | **SI 单位系统**（7 基本 + 22 具名 + 组合） | — | `{system, base[7], named[22], combined[], count}` |
 | GET | `/` | 世界画布（Three.js） | — | HTML |
 | GET | `/assets/*` · `/images/*` · `/scenes/*` | 静态产物 | — | 文件 |
@@ -138,4 +139,5 @@ apps/worker/     # BullMQ Worker（消费生成任务，调 ImageTo3DProvider，
 - **接口**：`GET /api/system/units` → 完整注册表；AI 工具 `system.units`（按符号/名称/量纲过滤）。
 - **校验**：`semantic.validate` 检查 `entity.physics` 的量纲合法性（`parseDimension` 解析 `kg·m/s²`、`J/K`、`Ω` 等表达式，含 Unicode 上标 `²³⁻¹`）。
 - **画布约束**：`canvas.place` 读取实体 `physics.dimensions`（SI），按资产自然包围盒等比/逐轴缩放，使世界尺寸符合指定量纲（如起重机高 12 m → scale [12,12,12]）。
+- **批评器**（`apps/api/src/critic.mjs`，零依赖）：四维审查——① 物理量纲/比例（过高/过小/各向异性）② 布局（占地重叠率、出界）③ 语义一致性（规范实体缺失、物理量漂移）④ 光照（缺失/强度）。输出严重度 + **可执行修复建议**（移动/缩放/补灯）。评分：100 − 扣分（high 18 / medium 8 / low 3）。
 - **零外部依赖**：纯数据注册表。

@@ -27,7 +27,7 @@
 | `img3d` | fromImage / fromMultiView / postprocess / rig / animate | 自研：单图/多视图→网格→贴图→分割/减面/UV/绑定/动画 |
 | `asset` | ingest / search / compose / variant | 资产库：语义索引、复用、组合、变体 |
 | `canvas` | place / layout / environment / camera / validate | 世界画布：AI 摆放、布局、环境光照、相机、校验 |
-| `critic` | review / styleConsistency | 审美批评器：评分、问题、修改建议 |
+| `critic` | review / styleConsistency | 批评器：量纲/布局/语义/光照四维审查，评分 + 严重度 + 可执行修复建议 |
 | `export` | game / film / audio | 游戏 glTF+场景JSON · 影视镜头序列+渲染 · 音频 |
 | `system` | task.get/list/cancel · balance · file.upload/presign · **units** | 任务、计费、文件、**SI 单位系统**（`system.units` 查询量纲/定义） |
 

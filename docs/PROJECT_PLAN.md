@@ -206,7 +206,7 @@ Asset Library (语义标签/来源链/缩略图)
 - `canvas.validate(sceneGraph) → {ok, issues}`（遮挡/穿插/性能/语义一致性）
 
 **F. 检查与批评域（审美 Agent）**
-- `critic.review(assetOrScene, {criteria}) → {score, issues, suggestions}`
+- `critic.review(assetOrScene, {criteria}) → {score, ok, issues[], suggestions[]}`（**四维审查**：① 物理量纲/比例——过高/过小/各向异性，量纲以 SI 为单位 ② 布局——占地重叠率、越出分区 ③ 语义一致性——规范实体缺失、物理量漂移 ④ 光照——缺失/强度异常；输出严重度 high/medium/low + **可执行修复建议**（移动/缩放/补灯），评分 = 100 − 扣分（18/8/3），供 AI 自动修正）
 - `critic.styleConsistency(scene) → {score, issues}`
 
 **G. 导出/成片域**
