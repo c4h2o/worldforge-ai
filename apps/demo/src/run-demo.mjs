@@ -32,7 +32,7 @@ function main(){
     // 概念图占位
     const imgName = `${ent.id}.png`;
     fs.writeFileSync(path.join(imgDir, imgName), conceptImage(color, spec.meta.seed + i));
-    // 程序化 3D（学 Tripo 的"代码生资产"思路）
+    // 程序化 3D（自研"代码生资产"思路）
     const glb = buildGLB(boxesForCategory(ent.category), ent.category);
     const glbName = `${ent.id}.glb`;
     fs.writeFileSync(path.join(asDir, glbName), glb);

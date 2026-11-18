@@ -44,7 +44,7 @@ export interface Asset {
     brief?: string;
     spec_id?: string;
     image_ids: string[];
-    provider: string;          // mock | tripo | triposr | ...
+    provider: string;          // mock | local（自研重建引擎）
     task_ids: string[];
   };
   parent_asset_id?: string;
@@ -80,7 +80,7 @@ export interface WorldScene {
   status: 'draft' | 'approved' | 'frozen';
 }
 
-/** 异步任务（学 Tripo：提交返回 task_id） */
+/** 异步任务（自研：提交返回 task_id） */
 export interface Task {
   id: string;
   type: string;

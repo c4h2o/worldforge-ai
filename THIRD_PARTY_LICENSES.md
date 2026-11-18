@@ -1,31 +1,9 @@
-# Third-Party Licenses
+# 第三方开源许可说明（Third-Party Licenses）
 
-WorldForge AI uses the following third-party components, each under its own
-license (all MIT). These portions are **not** governed by the WorldForge AI
-Non-Commercial License; their terms (including the requirement to retain the
-copyright and permission notice in all copies or substantial portions) must be
-honored.
+本项目**当前为零运行时第三方依赖**（自研 Node 零依赖实现）。
 
-## TripoSR
-- Source: https://github.com/VAST-AI-Research/TripoSR
-- License: MIT (Copyright (c) 2024 VAST-AI-Research and contributors)
-- Used as: image-to-3D fast path (SelfHostProvider)
+- 若后续引入第三方开源组件（如 3D 重建模型、glTF 工具等），将各自保留其原始许可证（MIT/Apache/BSD 等），并在此处登记**来源、版本、版权声明**。
+- 本项目许可证（[LICENSE](LICENSE)）**不覆盖**第三方组件；第三方组件受各自许可约束。
+- 本项目**不依赖任何第三方商用图生 3D API**；核心图生 3D 能力为自研引擎（自托管开源重建模型）。
 
-## TripoSG
-- Source: https://github.com/VAST-AI-Research/TripoSG
-- License: MIT (Copyright (c) 2025 VAST-AI-Research and contributors)
-- Used as: image-to-3D high-fidelity path (SelfHostProvider)
-
-## TripoSF
-- Source: https://github.com/VAST-AI-Research/TripoSF
-- License: MIT (Copyright (c) 2025 VAST-AI-Research and contributors)
-- Used as: differentiable mesh / postprocess (SelfHostProvider)
-
-## @tripo3d/sdk (tripo-js-sdk)
-- Source: https://github.com/VAST-AI-Research/tripo-js-sdk
-- License: MIT
-- Used as: optional Tripo commercial API client (TripoProvider)
-
----
-Note: The **Tripo commercial API** (openapi.tripo3d.ai) is a service governed by
-Tripo's Terms of Service, not an MIT-licensed component. See docs/LICENSING.md.
+> 当前无已引入的第三方组件。引入时更新本文件。

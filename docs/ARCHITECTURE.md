@@ -24,21 +24,21 @@
 |---|---|---|
 | `semantic` | parse / complete / validate | 愿景→Semantic Spec，补全、校验、人可锁定字段 |
 | `image` | generateFromSpec / generateView / generatePart / edit / consistency | 语义驱动生图（提示词合成 + 布局/语义条件） |
-| `img3d` | fromImage / fromMultiView / postprocess / rig / animate | 学习 Tripo：单图/多视图→网格→贴图→分割/减面/UV/绑定/动画 |
+| `img3d` | fromImage / fromMultiView / postprocess / rig / animate | 自研：单图/多视图→网格→贴图→分割/减面/UV/绑定/动画 |
 | `asset` | ingest / search / compose / variant | 资产库：语义索引、复用、组合、变体 |
 | `canvas` | place / layout / environment / camera / validate | 世界画布：AI 摆放、布局、环境光照、相机、校验 |
 | `critic` | review / styleConsistency | 审美批评器：评分、问题、修改建议 |
 | `export` | game / film / audio | 游戏 glTF+场景JSON · 影视镜头序列+渲染 · 音频 |
 | `system` | task.get/list/cancel · balance · file.upload/presign | 任务、计费、文件 |
 
-**约定**：耗时操作（生图/生3D/渲染）一律走**异步任务**——提交返回 `task_id`，轮询 `GET /tasks/{id}` 或 Webhook 拿终态（学 Tripo）。可返回 `needs_approval` 触发**人机门禁**。建议统一封装为 **MCP 工具** 以便任意 LLM 驱动。
+**约定**：耗时操作（生图/生3D/渲染）一律走**异步任务**——提交返回 `task_id`，轮询 `GET /tasks/{id}` 或 Webhook 拿终态（自研）。可返回 `needs_approval` 触发**人机门禁**。建议统一封装为 **MCP 工具** 以便任意 LLM 驱动。
 
-## 3. 图生 3D Provider（学习 Tripo 的关键抽象）
+## 3. 图生 3D Provider（自研 的关键抽象）
 
 ```ts
 interface ImageTo3DProvider {
-  fromImage(img, opts): Promise<TaskHandle>;       // 单图→3D (Tripo: image-to-model)
-  fromMultiView(views, opts): Promise<TaskHandle>; // 2-4 视图 (Tripo: multiview-to-model)
+  fromImage(img, opts): Promise<TaskHandle>;       // 单图→3D（自研 image-to-model）
+  fromMultiView(views, opts): Promise<TaskHandle>; // 2-4 视图（自研 multiview-to-model）
   postprocess(taskId, op, opts): Promise<TaskHandle>; // segment/decimate/uv/texture/convert/complete
   rig(taskId, opts): Promise<TaskHandle>;          // 自动绑定
   animate(taskId, opts): Promise<TaskHandle>;      // 预设动画重定向
@@ -46,7 +46,7 @@ interface ImageTo3DProvider {
 }
 ```
 
-实现：`MockProvider`（无 GPU，联调/CI）· `TripoProvider`（商用 API，质量保底）· `SelfHostProvider`（开源 TripoSR/SG/SF + Blender 后处理，降本）。
+实现：`MockProvider`（无 GPU，联调/CI）· `LocalReconstructionProvider`（商用 API，质量保底）· `LocalReconstructionProvider`（开源 开源单图 3D 重建模型 + Blender 后处理，降本）。
 
 ## 4. 异步任务模型
 
@@ -81,7 +81,7 @@ AgentLog { id, run_id, agent, action, tool, args, result, ts }
 | 后端 API | Node（NestJS/Fastify）· OpenAPI |
 | AI 编排 | LLM + Function Calling / MCP |
 | 图像生成 | Seedream / Flux / SD（OpenAI 兼容） |
-| 图生 3D | Tripo API（起步）+ TripoSR/SG/SF 自托管（降本） |
+| 图生 3D | 自研重建引擎（起步）+ 开源单图 3D 重建模型 自托管（降本） |
 | 3D 后处理 | Blender(bpy) + glTF-Transform |
 | 任务队列 | BullMQ + Redis（或 Temporal） |
 | 存储 | PostgreSQL + S3（MinIO） |

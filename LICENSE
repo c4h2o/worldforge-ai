@@ -55,8 +55,8 @@ TERMS
 
 6. THIRD-PARTY COMPONENTS
    Portions of the Software are provided by third parties and remain under
-   their respective licenses, including but not limited to TripoSR, TripoSG,
-   TripoSF, and @tripo3d/sdk (MIT). This license does NOT apply to those
+   their respective licenses, including but not limited to 开源单图重建模型, 开源重建模型,
+   开源重建模型, and JS 3D SDK (MIT). This license does NOT apply to those
    portions, and their terms (including attribution requirements) must be
    honored. See THIRD_PARTY_LICENSES.md.
 

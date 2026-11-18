@@ -4,7 +4,7 @@
 export const TOOL_DEFS = [
   { type: 'function', function: { name: 'semantic.parse', description: '把世界愿景解析为结构化语义规范 SemanticSpec。', parameters: { type: 'object', properties: { brief: { type: 'string', description: '世界愿景一句话' } }, required: ['brief'] } } },
   { type: 'function', function: { name: 'image.generateFromSpec', description: '按语义规范生成概念图（语义驱动）。', parameters: { type: 'object', properties: { spec: { type: 'object' }, style: { type: 'string' } } } } },
-  { type: 'function', function: { name: 'img3d.fromImage', description: '由图片/语义类别生成 3D 资产（学 Tripo image-to-model）。', parameters: { type: 'object', properties: { input: { type: 'string' }, category: { type: 'string' } }, required: ['input'] } } },
+  { type: 'function', function: { name: 'img3d.fromImage', description: '由图片/语义类别生成 3D 资产（自研 image-to-model）。', parameters: { type: 'object', properties: { input: { type: 'string' }, category: { type: 'string' } }, required: ['input'] } } },
   { type: 'function', function: { name: 'asset.ingest', description: '把 3D 资产入库并打语义标签。', parameters: { type: 'object', properties: { asset_id: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } } } } },
   { type: 'function', function: { name: 'canvas.layout', description: '按语义规范做世界布局摆放。', parameters: { type: 'object', properties: { brief: { type: 'string' } }, required: ['brief'] } } },
   { type: 'function', function: { name: 'critic.review', description: '审美/一致性检查，给出评分与问题。', parameters: { type: 'object', properties: {} } } },

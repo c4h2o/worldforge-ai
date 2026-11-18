@@ -1,6 +1,6 @@
 # WorldForge AI — Phase 1 MVP 服务端骨架
 
-> 目标：**Tripo 风格异步任务 API + 资产库 + 世界画布(Three.js)**，跑通"愿景 → 语义 → 生图/生3D 任务 → 资产库 → 世界画布 → 场景"。
+> 目标：**自研异步任务 API + 资产库 + 世界画布(Three.js)**，跑通"愿景 → 语义 → 生图/生3D 任务 → 资产库 → 世界画布 → 场景"。
 > 当前实现：**零依赖 Node http**（`apps/api/src/server.mjs`），默认 Mock Provider（程序化资产），**开箱即跑**；生产可换 Fastify + BullMQ + Postgres/Redis（见 §6）。
 
 ## 1. 快速开始
@@ -10,7 +10,7 @@ npm run dev        # = node apps/api/src/server.mjs  （零依赖，无需 insta
 # 打开 http://localhost:4321  →  世界画布（自动创建默认场景）
 ```
 
-## 2. 异步任务模型（学 Tripo）
+## 2. 异步任务模型（自研）
 
 - `POST /api/generation/*` → 立即返回 `{ task_id }`，异步处理。
 - `GET /api/tasks/:id` → 轮询状态：`queued → running → success/failed`，含 `progress` 与 `result`。
@@ -47,16 +47,16 @@ npm run dev        # = node apps/api/src/server.mjs  （零依赖，无需 insta
 apps/api/src/server.mjs   # HTTP 服务 + 路由 + 任务队列(内存) + 资产库 + 场景 + 世界画布
 apps/demo/src/            # 复用的语义解析 / GLB / PNG 生成器（零依赖）
 packages/core/            # 类型 + AI 工具定义
-packages/providers/       # ImageTo3DProvider 抽象 + Mock/Tripo/TripoSR
+packages/providers/       # ImageTo3DProvider 抽象 + Mock/Local(自研重建引擎)
 packages/orchestrator/    # AI 编排 + 审美批评
 ```
 
 ## 5. 实现要点
 
-- **Provider 抽象**：`createApp({provider})` 或 `IMG3D_PROVIDER=mock|tripo|triposr`（`.env` 加载）。
+- **Provider 抽象**：`createApp({provider})` 或 `IMG3D_PROVIDER=mock|local`（`.env` 加载）。
   - `mock`（默认）：程序化 GLB，零依赖、无凭据可跑（CI/联调）。
-  - `tripo`：Tripo 商用 API。任务管线 = `fromImage(input)` → 轮询 `/tasks/:id` → 下载 `model_url` → 入库为本地 `/assets/:id.glb`；`result.upstream_task` 保留上游 id。**input 需为可公开访问的图片 URL**。
-  - `triposr`：自托管 TripoSR/SG/SF（`TRIPOSR_ENDPOINT`，默认 `http://localhost:8080`），POST `/infer` + 轮询。
+  - `local`：自研重建引擎（自托管开源模型）。任务管线 = `fromImage(input)` → 轮询 `/tasks/:id` → 下载 `model_url` → 入库为本地 `/assets/:id.glb`；`result.upstream_task` 保留上游 id。
+  - `mock`（默认）：程序化 GLB，零依赖、无凭据可跑（CI/联调）。
   - **优雅回退**：真实 Provider 构造失败（如缺 key）→ 自动回退 `mock`，`/api/health` 返回 `provider_error` 说明原因，服务不中断。
 - **任务队列**：当前为**内存 Map + 异步处理**（`enqueue` → `processTask`）；生产替换为 BullMQ/Redis。
 - **资产库**：`Map<id, Asset>`，含语义标签、来源链、缩略图；生产持久化到 Postgres + S3。
@@ -101,7 +101,7 @@ apps/worker/     # BullMQ Worker（消费生成任务，调 ImageTo3DProvider，
 
 ## 8. 下一步
 
-- [ ] 接真实 `TripoProvider`（`TRIPO_API_KEY`）或 `SelfHostProvider`（TripoSR/SG/SF）验证质量。
+- [ ] 接真实 `LocalReconstructionProvider`（`LOCAL_RECON_ENDPOINT`，自托管开源重建模型）验证质量。
 - [ ] 编排智能体接 LLM Function Calling / MCP（`packages/orchestrator` 已就绪）。
 - [ ] 前端世界画布增强：拖拽摆放、环境/光照编辑、资产复用搜索。
 - [ ] 影视镜头序列（`export.film`）与渲染。

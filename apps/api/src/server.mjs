@@ -1,6 +1,6 @@
 // WorldForge AI — Phase 1 MVP 服务端骨架（零依赖 Node http）
-// Tripo 风格异步任务 API：POST /api/generation/* → {task_id}；GET /api/tasks/:id 轮询。
-// 资产库 + 世界画布(Three.js) + 场景导出。默认 Mock Provider（程序化资产）；可换 Tripo/TripoSR。
+// 异步任务 API（自研：POST /api/generation/* → {task_id}；GET /api/tasks/:id 轮询）。
+// 资产库 + 世界画布(Three.js) + 场景导出。默认 Mock Provider（程序化）；可换自研重建引擎 Local。
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,7 +34,7 @@ let imageProviderError = null;
 
 function ensureDirs(){ for (const d of [ASSETS_DIR, IMAGES_DIR, SCENES_DIR]) fs.mkdirSync(d, { recursive: true }); }
 
-// ── 任务队列（Tripo 风格：提交返回 task_id，异步处理，轮询拿状态）──
+// ── 任务队列（自研：提交返回 task_id，异步处理，轮询拿状态）──
 function enqueue(type, params, provider = 'mock') {
   const id = 'task_' + (++taskSeq);
   const task = { id, type, status: 'queued', progress: 0, params: { provider, ...params }, result: null, createdAt: new Date().toISOString() };
@@ -58,9 +58,11 @@ async function processTask(id) {
       fs.writeFileSync(path.join(ASSETS_DIR, modelName), glb);
       fs.writeFileSync(path.join(IMAGES_DIR, thumbName), conceptImage(categoryColor(category), taskSeq));
       task.progress = 80;
+      const realThumb = path.join(IMAGES_DIR, 'concept_' + category + '.png');
+      const thumb = fs.existsSync(realThumb) ? '/images/concept_' + category + '.png' : '/images/' + thumbName;
       const asset = {
         id, name: id, category,
-        local_path: '/assets/' + modelName, thumbnail: '/images/' + thumbName,
+        local_path: '/assets/' + modelName, thumbnail: thumb,
         mesh_stats: { faces: boxesForCategory(category).length * 12, verts: 24 * boxesForCategory(category).length, parts: 1 },
         materials: ['pbr'], animations: [],
         semantic_tags: [category], provenance: { spec_id: p.spec_id || null, image_ids: [], provider: p.provider, task_ids: [id] },
@@ -70,7 +72,7 @@ async function processTask(id) {
       task.status = 'success'; task.progress = 100;
       task.result = { model_url: asset.local_path, thumbnail: asset.thumbnail, asset_id: id, category };
     } else {
-      // 真实 Provider（tripo | triposr）：提交 → 轮询 → 下载 → 入库
+      // 真实 Provider（local 自研重建引擎）：提交 → 轮询 → 下载 → 入库
       const handle = await activeProvider.fromImage(p.input, { model: p.model, face_limit: p.face_limit, texture: p.texture });
       task.progress = 30; task.result = { upstream_task: handle.task_id };
       let st = await activeProvider.poll(handle.task_id);

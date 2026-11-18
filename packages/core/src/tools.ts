@@ -40,8 +40,8 @@ export interface AiToolRegistry {
 export const AI_TOOLS: ToolDef[] = [
   { name: 'semantic.parse', domain: 'semantic', description: '把世界愿景解析为结构化语义规范 SemanticSpec', parameters: { brief: { type: 'string' } } },
   { name: 'image.generateFromSpec', domain: 'image', description: '按语义规范生成概念图（语义驱动）', parameters: { spec: { type: 'object' }, views: { type: 'array' } } },
-  { name: 'img3d.fromImage', domain: 'img3d', description: '单图生成 3D 资产（学 Tripo image-to-model）', parameters: { input: { type: 'string' } } },
-  { name: 'img3d.fromMultiView', domain: 'img3d', description: '多视图生成 3D 资产（学 Tripo multiview-to-model）', parameters: { views: { type: 'array' } } },
+  { name: 'img3d.fromImage', domain: 'img3d', description: '单图生成 3D 资产（单图→3D 资产）', parameters: { input: { type: 'string' } } },
+  { name: 'img3d.fromMultiView', domain: 'img3d', description: '多视图生成 3D 资产（多视图→3D 资产）', parameters: { views: { type: 'array' } } },
   { name: 'asset.ingest', domain: 'asset', description: '把 3D 资产入库并打语义标签', parameters: { asset3d: { type: 'object' } } },
   { name: 'canvas.layout', domain: 'canvas', description: '按语义规范做世界布局规划', parameters: { spec: { type: 'object' } } },
   { name: 'critic.review', domain: 'critic', description: '审美/一致性检查并给出修改建议', parameters: { target: { type: 'object' } } },
