@@ -13,7 +13,8 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit -p tsconfig.base.json",
     "dev": "node apps/api/src/server.mjs",
-    "dev:api": "node apps/api/src/server.mjs"
+    "dev:api": "node apps/api/src/server.mjs",
+    "dev:recon": "node apps/recon/src/server.mjs"
   },
   "engines": {
     "node": ">=18"

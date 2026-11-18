@@ -17,7 +17,7 @@
 
 - **语义驱动（Semantic Spec）**：把愿景解析成结构化 JSON（实体/类别/属性/关系/风格/构图），作为生图与生 3D 的条件，可复现、可局部控制、人可锁定字段。
 - **AI 接口体系（核心）**：每个能力封装成 AI 可调用的工具（`semantic / image / img3d / asset / canvas / critic / export / system` 八大域），编排智能体以"生成→检查→修改→再生成"循环自主操作，关键节点走**人机门禁**。
-- **图生 3D Provider 抽象**：`ImageTo3DProvider` 接口，可换源——`MockProvider`（无 GPU 联调）、`LocalReconstructionProvider`（商用 API）、`LocalReconstructionProvider`（开源 开源单图 3D 重建模型 + Blender）。
+- **图生 3D Provider 抽象**：`ImageTo3DProvider` 接口，可换源——`MockProvider`（无 GPU 联调）、`LocalReconstructionProvider`（自研重建引擎，零外部依赖）。
 - **异步任务模型**：自研，提交即返回 `task_id`，轮询/Webhook 拿结果。
 - **零依赖可跑 Demo**：`npm run demo` 用纯 Node 内置模块跑通"愿景 → 语义 → 概念图 → 程序化 GLB 资产 → 资产库 → 世界画布 → 场景 JSON + 预览"。
 
@@ -91,12 +91,12 @@ npm run dev                     # 后续：API + Web 画布（规划中）
 ## 📚 参考资料
 
 - 自研图生 3D 引擎（核心能力）：单图/多视图 → 网格 + 贴图 + 后处理 → 可进引擎资产
-- 开源 3D 重建模型（MIT）：自托管作为自研引擎的快速路径
+- 自研重建引擎：语义感知贴图网格（零外部依赖，无外部模型）
 - 规划文档初稿：`docs/PROJECT_PLAN.md`
 
 ## 📄 License（双轨制）
 
 - **我们自己的代码**：**WorldForge AI Non-Commercial License v1.0** — [LICENSE](LICENSE)。
   - **非商业**（个人/教育/研究/内部测试）**免费**；**商业用途需付费购买商业许可**。
-  - 保留第三方 MIT 许可（开源单图 3D 重建模型 + SDK），见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
+  - 零外部依赖：全部自研实现，不引入第三方开源/商用组件，无需第三方许可——见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
   - 不侵权、不允许他人侵权、商用付费——详见 [docs/LICENSING.md](docs/LICENSING.md)。

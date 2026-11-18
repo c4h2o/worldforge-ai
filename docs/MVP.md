@@ -55,7 +55,7 @@ packages/orchestrator/    # AI 编排 + 审美批评
 
 - **Provider 抽象**：`createApp({provider})` 或 `IMG3D_PROVIDER=mock|local`（`.env` 加载）。
   - `mock`（默认）：程序化 GLB，零依赖、无凭据可跑（CI/联调）。
-  - `local`：自研重建引擎（自托管开源模型）。任务管线 = `fromImage(input)` → 轮询 `/tasks/:id` → 下载 `model_url` → 入库为本地 `/assets/:id.glb`；`result.upstream_task` 保留上游 id。
+  - `local`：自研重建引擎（零外部依赖）。任务管线 = `fromImage(input)` → 轮询 `/tasks/:id` → 下载 `model_url` → 入库为本地 `/assets/:id.glb`；`result.upstream_task` 保留上游 id。
   - `mock`（默认）：程序化 GLB，零依赖、无凭据可跑（CI/联调）。
   - **优雅回退**：真实 Provider 构造失败（如缺 key）→ 自动回退 `mock`，`/api/health` 返回 `provider_error` 说明原因，服务不中断。
 - **任务队列**：当前为**内存 Map + 异步处理**（`enqueue` → `processTask`）；生产替换为 BullMQ/Redis。
@@ -99,9 +99,17 @@ apps/worker/     # BullMQ Worker（消费生成任务，调 ImageTo3DProvider，
 - 存储：`PostgreSQL`（任务/资产/场景元数据）+ `S3/MinIO`（GLB/PNG/渲染）。
 - 一致性：`idempotency_key` 防重复提交；失败对账；`Webhook` 回调（可选）。
 
+## 7.5 自研重建引擎（apps/recon）
+
+- 启动：`npm run dev:recon` → `http://localhost:8080`（零依赖，Node 内置模块）。
+- 端点：`POST /infer {images:[url],category}` → `{task_id}`；`GET /tasks/:id`；`GET /recon/models/:file.glb`。
+- 能力：输入概念图（URL/本地路径/Data-URL）→ 语义感知**贴图 GLB**（以图像为 baseColorTexture，按类别比例构型）。
+- 接入：`IMG3D_PROVIDER=local` + `LOCAL_RECON_ENDPOINT=http://localhost:8080`。
+- 零外部依赖：不引入任何第三方开源/商用组件。
+
 ## 8. 下一步
 
-- [ ] 接真实 `LocalReconstructionProvider`（`LOCAL_RECON_ENDPOINT`，自托管开源重建模型）验证质量。
+- [ ] 接真实 `LocalReconstructionProvider`（`LOCAL_RECON_ENDPOINT`，零外部依赖自研引擎）验证质量。
 - [ ] 编排智能体接 LLM Function Calling / MCP（`packages/orchestrator` 已就绪）。
 - [ ] 前端世界画布增强：拖拽摆放、环境/光照编辑、资产复用搜索。
 - [ ] 影视镜头序列（`export.film`）与渲染。

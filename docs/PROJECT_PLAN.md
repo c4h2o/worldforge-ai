@@ -183,7 +183,7 @@ Asset Library (语义标签/来源链/缩略图)
 - `image.consistency(multiViewImages) → {score, issues}`（多视角一致性检查）
 
 **C. 图生 3D 域（自研）**
-- `img3d.fromImage(image, {model, faceLimit, texture}) → task`（单图→3D，单图→3D）
+- `img3d.fromImage(image, {model, faceLimit, texture}) → task`（单图→3D）
 - `img3d.fromMultiView(views, {angleMap}) → task`（对应 `multiview-to-model`）
 - `img3d.postprocess(taskId, {type, params}) → task`
   - `segment`（语义部件拆分，网格/部件分割）
@@ -258,7 +258,7 @@ loop {
   ```
 - **Provider 实现**：
   - `LocalReconstructionProvider`（商用 API，质量高，起步用）——对应 `/generation/image-to-model`、`multiview-to-model`、`mesh/*`、`animations/*`
-  - `LocalReconstructionProvider`（开源自托管，成本可控）——**开源单图重建模型（MIT，快速路径）** 做快速路径；**开源高质量重建模型** 做高质量路径；后处理用 **Blender(bpy) + glTF-Transform** 自研
+  - `LocalReconstructionProvider`（自研引擎，零外部依赖）——**语义感知贴图网格** 做快速路径；**程序化增强** 做高质量路径；后处理用 **Blender(bpy) + glTF-Transform** 自研
   - `MockProvider`（无 GPU 时占位，供前端/流程联调）
 - **产出规格**：网格（GLB/glTF）+ 材质贴图 + 语义部件（部件分割）+ 可选绑定/动画 + 缩略图 + 来源链。
 - **质量分层**：低面数（游戏/移动，P 系列思路）↔ 高保真（影视特写，H 系列思路）。
@@ -338,7 +338,7 @@ loop {
 | 后端 API | **Node (NestJS/或 Fastify)** | 与前端同栈、异步任务编排、OpenAPI |
 | AI 编排 | LLM（Claude/GPT 等）+ **Function Calling / MCP** | 编排智能体调用 AI 接口 |
 | 图像生成 | Seedream / Flux / SD（OpenAI 兼容） | 语义驱动生图；抽象 `ImageProvider` |
-| 图生 3D | **自研重建引擎**（自托管开源模型，降本） | 核心能力；抽象 `ImageTo3DProvider` |
+| 图生 3D | **自研重建引擎**（零外部依赖，降本） | 核心能力；抽象 `ImageTo3DProvider` |
 | 3D 后处理 | **Blender (bpy) headless + glTF-Transform** | 分割/减面/UV/绑定/转换 |
 | 任务队列 | **BullMQ + Redis**（或 Temporal） | 自研异步任务模型 |
 | 存储 | PostgreSQL（元数据/场景图）+ **S3 兼容对象存储**（资产/图/模型/渲染） | 资产与场景持久化 |
@@ -394,7 +394,7 @@ AgentLog { id, run_id, agent, action, tool, args, result, ts }   // 全流程可
 ## 11. 迭代路线图
 
 ### 阶段 0：概念验证（2–4 周）
-- 打通**单资产最小闭环**：语义→图（文生图）→ 3D（自研重建引擎（自托管开源模型））→ GLB 预览。
+- 打通**单资产最小闭环**：语义→图（文生图）→ 3D（自研重建引擎）→ GLB 预览。
 - 验证"语义驱动"可行性；搭 `ImageTo3DProvider` 抽象与 `MockProvider`。
 - **交付**：`semantic→image→3D→viewer` 可跑的 Demo + 规格文档。
 
@@ -414,7 +414,7 @@ AgentLog { id, run_id, agent, action, tool, args, result, ts }   // 全流程可
 - 多 Agent 协同（策划/审美/生成/摆放/导演）；门禁工作流成熟。
 - **影视**：镜头序列 + Blender 渲染 + 配乐/字幕成片。
 - **游戏**：多引擎导出、运行时包、基础可玩交互。
-- 世界持久化与多人协作（人-AI 共编）；自托管开源模型降本。
+- 世界持久化与多人协作（人-AI 共编）；零外部依赖降本。
 - **交付**：双产出（游戏场景 + 影视短片）稳定可用。
 
 ---
@@ -425,7 +425,7 @@ AgentLog { id, run_id, agent, action, tool, args, result, ts }   // 全流程可
 |---|---|---|
 | 图生 3D 质量/接缝/背面贴图 | 资产不可用 | 多视图输入 + 部件拆分 + 后处理（UV/补全）；质量分层；先用商用 API 保底 |
 | 多视角不一致/漂移 | 风格割裂 | `image.consistency` + 风格锁定（styleRef/seed）+ 校验门禁 |
-| 成本/延迟（3D 生成贵） | 迭代慢、烧钱 | 异步队列 + 预算上限 + 复用/变体 + 自托管开源降本 |
+| 成本/延迟（3D 生成贵） | 迭代慢、烧钱 | 异步队列 + 预算上限 + 复用/变体 + 自研降本 |
 | AI 循环发散（反复不过审） | 卡死 | 最大重试次数 + 人门禁兜底 + 批评标准可调 |
 | 语义落地偏差（spec→图失配） | 产出不对 | 结构化条件注入 + 局部编辑 + 人锁定关键字段 |
 | 生成物版权/合规 | 法务风险 | 来源链 + 人确认内容/授权 + 记录 provider 许可 |
@@ -445,7 +445,7 @@ AgentLog { id, run_id, agent, action, tool, args, result, ts }   // 全流程可
 
 ## 附：核心能力定位
 
-本项目核心图生 3D 能力为**自研引擎**（自托管开源重建模型），不依赖任何第三方商用图生 3D API；全部 AI 接口由 AI 编排智能体自主调用。
+本项目核心图生 3D 能力为**自研引擎**（零外部依赖），不依赖任何第三方开源/商用组件；全部 AI 接口由 AI 编排智能体自主调用。
 
 ---
 

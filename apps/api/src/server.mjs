@@ -85,9 +85,11 @@ async function processTask(id) {
       fs.writeFileSync(path.join(ASSETS_DIR, modelName), glb);
       task.progress = 90;
       const category = p.category || 'model';
+      let thumb = null;
+      if (p.input) { const m = String(p.input).match(/(images\/[^?#\s]+\.(?:png|jpg|jpeg|webp))/i); if (m) thumb = '/' + m[1]; }
       const asset = {
         id, name: id, category,
-        local_path: '/assets/' + modelName, thumbnail: null,
+        local_path: '/assets/' + modelName, thumbnail: thumb,
         mesh_stats: { faces: 0, verts: 0, parts: 0 },
         materials: ['pbr'], animations: [],
         semantic_tags: [category], provenance: { spec_id: p.spec_id || null, image_ids: [p.input || ''], provider: activeProvider.name, task_ids: [handle.task_id] },
@@ -95,7 +97,7 @@ async function processTask(id) {
       };
       assets.set(id, asset);
       task.status = 'success'; task.progress = 100;
-      task.result = { model_url: asset.local_path, thumbnail: null, asset_id: id, category, upstream_task: handle.task_id };
+      task.result = { model_url: asset.local_path, thumbnail: asset.thumbnail, asset_id: id, category, upstream_task: handle.task_id };
     }
   } catch (e) {
     task.status = 'failed'; task.result = { error: String(e && e.message || e) };

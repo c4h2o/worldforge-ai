@@ -1,6 +1,6 @@
 // WorldForge AI — 自研图生 3D 引擎 Provider（零依赖 JS）
 // kind: mock（程序化）| local（自托管单图 3D 重建引擎，我们自建/自运维）
-// 这是"图→3D"的核心能力，由本项目自己实现，不依赖任何第三方商用图生3D API。
+// 这是"图→3D"的核心能力，由本项目自己实现，零外部依赖（不依赖任何第三方开源/商用组件）。
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 

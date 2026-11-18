@@ -1,5 +1,5 @@
 // WorldForge AI — 自研图生 3D 引擎：Provider 抽象与实现（Mock / Local 自托管重建）
-// 这是本项目"图→3D"核心能力，自研自建，不依赖第三方商用图生3D API。
+// 这是本项目"图→3D"核心能力，自研自建，零外部依赖（不依赖任何第三方开源/商用组件）。
 
 export interface TaskHandle { task_id: string; }
 export interface TaskState {

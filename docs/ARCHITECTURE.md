@@ -46,7 +46,7 @@ interface ImageTo3DProvider {
 }
 ```
 
-实现：`MockProvider`（无 GPU，联调/CI）· `LocalReconstructionProvider`（商用 API，质量保底）· `LocalReconstructionProvider`（开源 开源单图 3D 重建模型 + Blender 后处理，降本）。
+实现：`MockProvider`（无 GPU，联调/CI）· `LocalReconstructionProvider`（自研引擎，零外部依赖）· Blender 后处理（自研管线），降本）。
 
 ## 4. 异步任务模型
 
@@ -81,7 +81,7 @@ AgentLog { id, run_id, agent, action, tool, args, result, ts }
 | 后端 API | Node（NestJS/Fastify）· OpenAPI |
 | AI 编排 | LLM + Function Calling / MCP |
 | 图像生成 | Seedream / Flux / SD（OpenAI 兼容） |
-| 图生 3D | 自研重建引擎（起步）+ 开源单图 3D 重建模型 自托管（降本） |
+| 图生 3D | 自研重建引擎（零外部依赖） |
 | 3D 后处理 | Blender(bpy) + glTF-Transform |
 | 任务队列 | BullMQ + Redis（或 Temporal） |
 | 存储 | PostgreSQL + S3（MinIO） |
