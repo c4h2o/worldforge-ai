@@ -32,6 +32,8 @@ npm run dev        # = node apps/api/src/server.mjs  （零依赖，无需 insta
 | GET | `/` | 世界画布（Three.js） | — | HTML |
 | GET | `/assets/*` · `/images/*` · `/scenes/*` | 静态产物 | — | 文件 |
 
+**图像生成 Provider**（Phase 1e）：`image.generateFromSpec` 接真实文生图（SenseNova `sensenova-u1.5-lite`，OpenAI 兼容 `/images/generations`）。`IMG_PROVIDER=mock|sensenova` + `SENSENOVA_API_KEY`；缺 key 优雅回退程序化占位。端点 `POST /api/images/generate {prompt,size}` → `{image_url}`。语义规范 → 提示词（`promptFromSpec`：风格+时段+天气+场景元素+构图）。
+
 **影视产出**（Phase 1d）：`POST | GET /api/scenes/:id/film` → 自动生成镜头序列（环绕开场 + 实体特写）`{film_id, shots[], duration, fps}`；`GET /film.html?id=:sceneId` 为浏览器端**成片播放/录制**（Three.js 相机沿镜头插值 + `MediaRecorder` 录 WebM 可下载）。Agent 工具：`export.film`。
 
 **世界画布编辑**（Phase 1b）：`PATCH /api/scenes/:id/environment`（环境/光照）、`POST /api/scenes/:id/entities`（资产库复用放置）、`PATCH | DELETE /api/scenes/:id/entities/:eid`（移动/删除），均实时落盘 `output/scenes/:id.json`。前端画布支持**拖拽移动 + 资产库搜索复用 + 环境光照面板**。

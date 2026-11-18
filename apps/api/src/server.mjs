@@ -11,6 +11,7 @@ import { conceptImage } from '../../demo/src/png.mjs';
 import { createProvider, downloadModel, sleep } from './providers.mjs';
 import { runAgent, TOOL_DEFS } from './agent.mjs';
 import { createLLM } from './llm.mjs';
+import { createImageProvider } from './image-providers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(__dirname, '../../../output');
@@ -28,6 +29,8 @@ const scenes = new Map();  // id -> WorldScene
 let taskSeq = 0, assetSeq = 0;
 let activeProvider = createProvider('mock', process.env);
 let providerError = null;
+let activeImageProvider = createImageProvider('mock', process.env);
+let imageProviderError = null;
 
 function ensureDirs(){ for (const d of [ASSETS_DIR, IMAGES_DIR, SCENES_DIR]) fs.mkdirSync(d, { recursive: true }); }
 
@@ -98,6 +101,17 @@ async function processTask(id) {
 }
 
 // ── 世界画布：AI 布局摆放（网格 + 分区）───────────────
+function promptFromSpec(spec) {
+  const m = spec.meta, w = spec.world;
+  const ents = spec.entities.map(e => e.count > 1 ? (e.category + '×' + e.count) : e.category).join('、');
+  return '电影级概念图，' + m.style + ' 风格，' + w.atmosphere.time + (w.atmosphere.weather ? ('，' + w.atmosphere.weather) : '') + '，场景元素：' + ents + '，' + (spec.composition ? ('构图 ' + spec.composition.layout + '，景深 ' + spec.composition.depth) : '') + '，体积光，宽银幕构图，8K';
+}
+
+async function generateImage(prompt, size) {
+  if (activeImageProvider.name === 'mock') return await activeImageProvider.generate(prompt, size);
+  return await activeImageProvider.generate(prompt, size);
+}
+
 function persistScene(scene) { fs.writeFileSync(path.join(SCENES_DIR, scene.id + '.json'), JSON.stringify(scene, null, 2)); }
 
 function autoShots(scene) {
@@ -168,10 +182,19 @@ export function createApp(options = {}) {
   ensureDirs();
   try { activeProvider = createProvider(options.provider || process.env.IMG3D_PROVIDER || 'mock', process.env); providerError = null; }
   catch (e) { activeProvider = createProvider('mock', process.env); providerError = String(e && e.message || e); }
+  try { activeImageProvider = createImageProvider(options.imageProvider || process.env.IMG_PROVIDER || 'mock', process.env); imageProviderError = null; }
+  catch (e) { activeImageProvider = createImageProvider('mock', process.env); imageProviderError = String(e && e.message || e); }
   // AI 接口分发（编排智能体 → 真实管线）
   const dispatch = {
     'semantic.parse': async (args, ctx) => ({ result: parseBrief(args.brief || ctx.brief) }),
-    'image.generateFromSpec': async (args, ctx) => ({ result: { note: '概念图生成（语义驱动）', entities: parseBrief(args.spec && args.spec.brief || ctx.brief).entities.length } }),
+    'image.generateFromSpec': async (args, ctx) => {
+      const spec = parseBrief(args.spec && args.spec.brief || ctx.brief);
+      const prompt = args.prompt || promptFromSpec(spec);
+      const buf = await generateImage(prompt, args.size);
+      const name = 'concept_' + Date.now() + '.png';
+      fs.writeFileSync(path.join(IMAGES_DIR, name), buf);
+      return { result: { image_url: '/images/' + name, prompt, provider: activeImageProvider.name, entities: spec.entities.length } };
+    },
     'img3d.fromImage': async (args) => {
       const { task_id, done } = enqueue('image-to-model', { input: args.input || ('semantic:' + (args.category || 'prop')), category: args.category });
       await done;
@@ -194,7 +217,7 @@ export function createApp(options = {}) {
     const p = u.pathname;
     try {
       // API
-      if (p === '/api/health') return json(res, 200, { ok: true, provider: activeProvider.name, provider_error: providerError, tasks: tasks.size, assets: assets.size, scenes: scenes.size });
+      if (p === '/api/health') return json(res, 200, { ok: true, provider: activeProvider.name, provider_error: providerError, image_provider: activeImageProvider.name, image_provider_error: imageProviderError, tasks: tasks.size, assets: assets.size, scenes: scenes.size });
 
       if (p === '/api/generation/image-to-model' && req.method === 'POST') {
         const b = await readBody(req);
@@ -264,6 +287,13 @@ export function createApp(options = {}) {
         return s ? json(res, 200, s) : json(res, 404, { error: 'scene not found' });
       }
 
+      if (p === '/api/images/generate' && req.method === 'POST') {
+        const b = await readBody(req);
+        const buf = await generateImage(b.prompt || 'concept', b.size || '1024x1024');
+        const name = 'concept_' + Date.now() + '.png';
+        fs.writeFileSync(path.join(IMAGES_DIR, name), buf);
+        return json(res, 200, { image_url: '/images/' + name, provider: activeImageProvider.name, prompt: b.prompt || 'concept' });
+      }
       if (p === '/film.html' && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(filmHtml()); }
       const filmRe = p.match(/^\/api\/scenes\/([^/]+)\/film$/);
       if (filmRe && (req.method === 'GET' || req.method === 'POST')) {
