@@ -1,5 +1,10 @@
 # 🌐 WorldForge AI — Semantic World Builder
 
+![CI](https://github.com/c4h2o/worldforge-ai/actions/workflows/ci.yml/badge.svg)
+![status](https://img.shields.io/badge/status-Phase%200%20Demo-brightgreen)
+![node](https://img.shields.io/badge/node-%E2%89%A518-3c873a)
+![license](https://img.shields.io/badge/license-NonCommercial%20%2B%20Commercial%20paid-blue)
+
 > **AI 自主驱动的虚拟世界素材生产与搭建平台**（Phase 0 概念验证 Demo）
 > 学习对象：**Tripo 的图生 3D 能力**。核心链路：**语义驱动生图 → 图生 3D → 资产库 → 世界画布 → 游戏/影视产出**。
 > 全流程由 **AI 编排智能体** 通过 **AI 接口** 自主操作，人只做 AI 做不了的事（审美定调、门禁确认、手工修整、合规）。

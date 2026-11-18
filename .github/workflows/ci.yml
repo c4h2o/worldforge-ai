@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  # Phase 0 冒烟测试：零依赖跑通"语义→图→3D→资产→画布→导出"，并校验产物存在。
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run Phase 0 demo (semantic -> image -> 3D -> asset -> canvas)
+        run: node apps/demo/src/run-demo.mjs "一座雨夜赛博朋克港口，起重机、集装箱堆场、巡逻机器人，蓝红霓虹"
+      - name: Verify outputs
+        run: |
+          test -f output/scene.json
+          test -f output/assets.json
+          test -f output/world-preview.html
+          test -f output/assets/crane_01_1.glb
+          test -f output/images/crane_01_1.png
+          echo "✅ Phase 0 demo outputs OK"
+      - name: TypeScript packages are present
+        run: |
+          test -f packages/core/src/types.ts
+          test -f packages/providers/src/index.ts
+          test -f packages/orchestrator/src/orchestrator.ts
+          echo "✅ TS packages present"
