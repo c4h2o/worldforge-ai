@@ -11,7 +11,9 @@
   "scripts": {
     "demo": "node apps/demo/src/run-demo.mjs",
     "build": "tsc -b",
-    "typecheck": "tsc --noEmit -p tsconfig.base.json"
+    "typecheck": "tsc --noEmit -p tsconfig.base.json",
+    "dev": "node apps/api/src/server.mjs",
+    "dev:api": "node apps/api/src/server.mjs"
   },
   "engines": {
     "node": ">=18"

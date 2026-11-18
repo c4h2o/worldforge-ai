@@ -63,6 +63,14 @@ node apps/demo/src/run-demo.mjs "一座雨夜赛博朋克港"
 # 输出到 ./output/ ：概念图、程序化 GLB 资产、assets.json、scene.json、world-preview.html
 ```
 
+**MVP 服务端**（异步任务 API + 世界画布，零依赖）：
+```bash
+npm run dev        # 打开 http://localhost:3000（世界画布）
+# API: POST /api/generation/image-to-model → {task_id}; GET /api/tasks/:id
+```
+
+详见 [docs/MVP.md](docs/MVP.md)。
+
 **安装与真实集成**（可选，接入真实图像/3D 生成）：
 ```bash
 npm install                     # 安装 workspaces（core/providers/orchestrator）

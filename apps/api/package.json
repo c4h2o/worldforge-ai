@@ -1,0 +1,8 @@
+{
+  "name": "@worldforge/api",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": { "dev": "node src/server.mjs", "start": "node src/server.mjs" },
+  "engines": { "node": ">=18" }
+}

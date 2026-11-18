@@ -24,6 +24,15 @@ jobs:
           test -f output/assets/crane_01_1.glb
           test -f output/images/crane_01_1.png
           echo "✅ Phase 0 demo outputs OK"
+      - name: MVP API smoke test (async task API + world canvas)
+        run: |
+          node apps/api/src/server.mjs &
+          sleep 1.5
+          curl -sf http://localhost:3000/api/health | grep -q '"ok":true'
+          curl -sf -X POST http://localhost:3000/api/scenes -H 'Content-Type: application/json' -d '{"brief":"一座雨夜赛博朋克港口"}' | grep -q 'scene_graph'
+          curl -sf http://localhost:3000/api/assets | grep -q '"assets"'
+          curl -sf http://localhost:3000/ | grep -q 'World Canvas'
+          echo "✅ MVP API OK"
       - name: TypeScript packages are present
         run: |
           test -f packages/core/src/types.ts
