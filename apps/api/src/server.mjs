@@ -158,6 +158,8 @@ async function createScene(brief) {
   const spec = parseBrief(brief);
   const ids = [];
   for (const ent of spec.entities) {
+    const existing = [...assets.values()].find(a => a.category === ent.category);
+    if (existing) { ids.push(existing.id); continue; }
     const { task_id, done } = enqueue('image-to-model', { input: 'semantic:' + ent.category, category: ent.category, spec_id: spec.meta.id });
     await done;                       // mock 快；真实 Provider 由客户端轮询
     ids.push(task_id);
@@ -186,7 +188,7 @@ async function createScene(brief) {
 // ── 磁盘持久化（资产元数据 + 场景）──
 function persistAssets(){ try { fs.writeFileSync(ASSETS_META, JSON.stringify([...assets.values()], null, 2)); } catch {} }
 function loadPersisted(){
-  try { if (fs.existsSync(ASSETS_META)) { for (const a of JSON.parse(fs.readFileSync(ASSETS_META, 'utf8'))) { assets.set(a.id, a); const n = Number(String(a.id).replace(/^\D+/, '')); if (n > assetSeq) assetSeq = n; } } } catch {}
+  try { if (fs.existsSync(ASSETS_META)) { for (const a of JSON.parse(fs.readFileSync(ASSETS_META, 'utf8'))) { assets.set(a.id, a); const n = Number(String(a.id).replace(/^\D+/, '')); if (n > assetSeq) assetSeq = n; if (n > taskSeq) taskSeq = n; } } } catch {}
   try { if (fs.existsSync(SCENES_DIR)) { for (const f of fs.readdirSync(SCENES_DIR)) { if (!f.endsWith('.json')) continue; const s = JSON.parse(fs.readFileSync(path.join(SCENES_DIR, f), 'utf8')); scenes.set(s.id || f.replace(/\.json$/, ''), s); const n = Number(String(s.id || '').replace(/^\D+/, '')); if (n > sceneSeq) sceneSeq = n; } } } catch {}
 }
 function json(res, code, data){ const body = JSON.stringify(data); res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }); res.end(body); }
@@ -212,7 +214,7 @@ export function createApp(options = {}) {
       return { result: { image_url: '/images/' + name, prompt, provider: activeImageProvider.name, entities: spec.entities.length } };
     },
     'img3d.fromImage': async (args) => {
-      const { task_id, done } = enqueue('image-to-model', { input: args.input || ('semantic:' + (args.category || 'prop')), category: args.category });
+    const { task_id, done } = enqueue('image-to-model', { input: args.input || ('semantic:' + (args.category || 'prop')), category: args.category });
       await done;
       const a = assets.get(task_id);
       return { result: { task_id, asset_id: task_id, model_url: a && a.local_path, category: a && a.category } };
@@ -278,7 +280,7 @@ export function createApp(options = {}) {
         const n = scene.scene_graph.entities.length;
         const entity = { id: aid + '_e' + n, asset_id: aid,
           transform: { position: b.position || [((n % 4) * 3.2) - 4, 0, (Math.floor(n / 4) * 3.2) - 4], rotation: b.rotation || [0, 0, 0], scale: b.scale || [1, 1, 1] },
-          semantic_role: b.role || assets.get(aid).category, placed_by: b.placed_by || 'user', locked: !!b.locked };
+          semantic_role: b.role || assets.get(aid).category, placed_by: b.placed_by || 'user', locked: !!b.locked, animation: b.animation || null };
         scene.scene_graph.entities.push(entity);
         persistScene(scene); return json(res, 200, entity);
       }
@@ -290,6 +292,7 @@ export function createApp(options = {}) {
         if (b.transform) ent.transform = { ...ent.transform, ...b.transform };
         if (b.semantic_role) ent.semantic_role = b.semantic_role;
         if (b.locked !== undefined) ent.locked = !!b.locked;
+        if (b.animation !== undefined) ent.animation = b.animation;
         persistScene(scene); return json(res, 200, ent);
       }
       if (entRe && req.method === 'DELETE') {
