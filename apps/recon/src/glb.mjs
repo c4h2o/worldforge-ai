@@ -13,6 +13,7 @@ const FACES = [
 const UVS = [[0,0],[1,0],[1,1],[0,1]];
 // 语义感知：各类别的长宽高比例（x,y,z）
 const ANIM = { crane:[{part:'jib',axis:'y',speed:0.4}], robot:[{part:'armL',axis:'x',speed:0.6},{part:'armR',axis:'x',speed:-0.6}], light:[{part:'head',axis:'y',speed:0.3}] };
+const PART_ANIM = { crane:{ 2:{ pivot:[0,2.7,0], axis:'y', speed:0.4 } }, robot:{ 2:{ pivot:[-0.52,1.6,0], axis:'x', speed:0.6 }, 3:{ pivot:[0.52,1.6,0], axis:'x', speed:-0.6 } }, light:{ 1:{ pivot:[0,2.8,0], axis:'y', speed:0.3 } } };
 const RATIO = { container:[1.6,1.0,1.0], building:[1.0,1.7,1.0], robot:[0.6,1.9,0.6], crane:[0.5,2.1,0.5], ship:[2.2,0.6,0.6], light:[0.4,2.5,0.4], default:[1,1,1] };
 
 export function buildTexturedGLB(category, imagePng, w, h, name) {
@@ -142,7 +143,7 @@ export function buildPartGLB(category, imgs, name) {
   const binLen = posB+norB+uvB+idxTotal+imgTotal;
   const imgBVStart = 3 + idxRanges.length;
   const gltf = {
-    asset: { version:'2.0', generator:'worldforge-recon', extras: { animations: ANIM[category] || [] } }, scene:0, scenes:[{nodes:[0]}], nodes:[{mesh:0,name}],
+    asset: { version:'2.0', generator:'worldforge-recon', extras: { parts: parts.map((p,i)=>Object.assign({ name:'part'+i, pivot:p.c, axis:'y', speed:0 }, (PART_ANIM[category]&&PART_ANIM[category][i])||{})), animations: parts.map((p,i)=>Object.assign({ name:'part'+i, pivot:p.c, axis:'y', speed:0 }, (PART_ANIM[category]&&PART_ANIM[category][i])||{})).filter(a=>a.speed>0) } }, scene:0, scenes:[{nodes:[0]}], nodes:[{mesh:0,name}],
     meshes:[{ name, primitives: idxRanges.map((r,i)=>({ attributes:{POSITION:0,NORMAL:1,TEXCOORD_0:2}, indices:r.accessor, material:r.matIdx })) }],
     materials: mats,
     images: usedTex.map((ti,k)=>({ bufferView: imgBVStart+k, mimeType:'image/png', name:'view'+k })),
