@@ -186,6 +186,16 @@ function previewForScene(scene, w, h) {
   return { url: '/images/' + name, width: out.width, height: out.height, shaded: out.shaded, ms: out.ms };
 }
 
+// 单资产预览：以原点放置资产，自动取景
+function previewForAsset(aid, w, h) {
+  if (!assets.has(aid)) throw new Error('资产不存在: ' + aid);
+  const out = renderScene({ scene_graph: { entities: [{ id: 'asset', asset_id: aid, transform: { position: [0,0,0], rotation: [0,0,0], scale: [1,1,1] } }] } }, { W: w || 512, H: h || 512, assetFor: assetPathFor });
+  if (!out.ok) throw new Error(out.error || '资产预览渲染失败');
+  const name = 'asset_preview_' + aid + '.png';
+  fs.writeFileSync(path.join(IMAGES_DIR, name), Buffer.from(out.png));
+  return { url: '/images/' + name, width: out.width, height: out.height, shaded: out.shaded, ms: out.ms };
+}
+
 // entity.physics.dimensions = {length:{value,unit}, width:{...}, height:{...}} 或 {size:{value,unit}}（SI）
 // 按资产自然包围盒等比/逐轴缩放，使实体世界尺寸符合指定的 SI 量纲。
 function applyPhysicsScale(physics, extent) {
@@ -329,7 +339,14 @@ export function createApp(options = {}) {
       const a = assets.get(task_id);
       return { result: { task_id, asset_id: task_id, model_url: a && a.local_path, category: a && a.category } };
     },
-    'asset.search': async (args) => ({ result: { query: args, count: searchAssets(args).length, assets: searchAssets(args) } }),
+    'asset.preview': async (args) => {
+        const list = [...assets.values()];
+        const aid = args.asset_id || (list[0] && list[0].id);
+        if (!aid) return { error: '无可用资产' };
+        try { return { result: { asset_id: aid, ...previewForAsset(aid, args.w || 512, args.h || 512) } }; }
+        catch (e) { return { error: e.message }; }
+      },
+      'asset.search': async (args) => ({ result: { query: args, count: searchAssets(args).length, assets: searchAssets(args) } }),
     'asset.ingest': async (args) => {
       const a = assets.get(args.asset_id);
       if (a && Array.isArray(args.tags)) a.semantic_tags = [...new Set([...a.semantic_tags, ...args.tags])];
@@ -378,6 +395,18 @@ export function createApp(options = {}) {
         const q = Object.fromEntries(u.searchParams);
         if (q.q || q.category || q.tags) q.tags = q.tags ? q.tags.split(',') : undefined;
         return json(res, 200, { query: q, count: searchAssets(q).length, assets: searchAssets(q) });
+      }
+      if (p === '/api/assets/search' && req.method === 'GET') { const q2 = Object.fromEntries(u.searchParams); return json(res, 200, { query: q2, count: searchAssets(q2).length, assets: searchAssets(q2) }); }
+      const aMatch = p.match(/^\/api\/assets\/([^\/]+)\/preview$/);
+      if (aMatch && req.method === 'GET') {
+        try {
+          const a = assets.get(decodeURIComponent(aMatch[1]));
+          if (!a) return json(res, 404, { error: '资产不存在' });
+          const info = previewForAsset(a.id, Number(u.searchParams.get('w')) || 0, Number(u.searchParams.get('h')) || 0);
+          const buf2 = fs.readFileSync(path.join(IMAGES_DIR, path.basename(info.url)));
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache', 'Content-Length': buf2.length });
+          res.end(buf2); return;
+        } catch (e) { return json(res, 500, { error: e.message }); }
       }
       if (p === '/api/system/units' && req.method === 'GET') return json(res, 200, getUnits());
 
