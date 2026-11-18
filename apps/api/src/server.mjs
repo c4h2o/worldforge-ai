@@ -15,7 +15,10 @@ import { createImageProvider } from './image-providers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(__dirname, '../../../output');
+const WORLD_HTML = path.join(__dirname, '..', 'public', 'world.html');
+const WORLD_JS = path.join(__dirname, '..', 'public', 'world.mjs');
 const ASSETS_DIR = path.join(OUT, 'assets'), IMAGES_DIR = path.join(OUT, 'images'), SCENES_DIR = path.join(OUT, 'scenes');
+const ASSETS_META = path.join(OUT, 'assets.json');
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.mjs':'text/javascript', '.json':'application/json', '.glb':'model/gltf-binary', '.png':'image/png', '.css':'text/css' };
 
 // ── 存储（内存 + 文件持久化）─────────────────────────
@@ -68,7 +71,7 @@ async function processTask(id) {
         semantic_tags: [category], provenance: { spec_id: p.spec_id || null, image_ids: [], provider: p.provider, task_ids: [id] },
         version: 1, frozen: false,
       };
-      assets.set(id, asset);
+      assets.set(id, asset); persistAssets();
       task.status = 'success'; task.progress = 100;
       task.result = { model_url: asset.local_path, thumbnail: asset.thumbnail, asset_id: id, category };
     } else {
@@ -95,7 +98,7 @@ async function processTask(id) {
         semantic_tags: [category], provenance: { spec_id: p.spec_id || null, image_ids: [p.input || ''], provider: activeProvider.name, task_ids: [handle.task_id] },
         version: 1, frozen: false,
       };
-      assets.set(id, asset);
+      assets.set(id, asset); persistAssets();
       task.status = 'success'; task.progress = 100;
       task.result = { model_url: asset.local_path, thumbnail: asset.thumbnail, asset_id: id, category, upstream_task: handle.task_id };
     }
@@ -177,13 +180,19 @@ async function createScene(brief) {
 }
 
 // ── HTTP 路由 ─────────────────────────────────────
+// ── 磁盘持久化（资产元数据 + 场景）──
+function persistAssets(){ try { fs.writeFileSync(ASSETS_META, JSON.stringify([...assets.values()], null, 2)); } catch {} }
+function loadPersisted(){
+  try { if (fs.existsSync(ASSETS_META)) { for (const a of JSON.parse(fs.readFileSync(ASSETS_META, 'utf8'))) { assets.set(a.id, a); const n = Number(String(a.id).replace(/^\D+/, '')); if (n > assetSeq) assetSeq = n; } } } catch {}
+  try { if (fs.existsSync(SCENES_DIR)) { for (const f of fs.readdirSync(SCENES_DIR)) { if (!f.endsWith('.json')) continue; const s = JSON.parse(fs.readFileSync(path.join(SCENES_DIR, f), 'utf8')); scenes.set(s.id || f.replace(/\.json$/, ''), s); const n = Number(String(s.id || '').replace(/^\D+/, '')); if (n > sceneSeq) sceneSeq = n; } } } catch {}
+}
 function json(res, code, data){ const body = JSON.stringify(data); res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }); res.end(body); }
 async function readBody(req){ let b=''; for await (const c of req) b += c; try { return b ? JSON.parse(b) : {}; } catch { return {}; } }
 
 function serveFile(res, filePath){ fs.readFile(filePath, (err, data) => { if (err) { res.writeHead(404); return res.end('not found'); } res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' }); res.end(data); }); }
 
 export function createApp(options = {}) {
-  ensureDirs();
+  ensureDirs(); loadPersisted();
   try { activeProvider = createProvider(options.provider || process.env.IMG3D_PROVIDER || 'mock', process.env); providerError = null; }
   catch (e) { activeProvider = createProvider('mock', process.env); providerError = String(e && e.message || e); }
   try { activeImageProvider = createImageProvider(options.imageProvider || process.env.IMG_PROVIDER || 'mock', process.env); imageProviderError = null; }
@@ -315,7 +324,8 @@ export function createApp(options = {}) {
       }
 
       // 世界画布页
-      if (p === '/') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(worldHtml()); }
+      if (p === '/') { const data = fs.readFileSync(WORLD_HTML); res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(data); }
+      if (p === '/world.mjs') { const data = fs.readFileSync(WORLD_JS); res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(data); }
 
       // 静态产物
       if (p.startsWith('/assets/') || p.startsWith('/images/') || p.startsWith('/scenes/')) {
