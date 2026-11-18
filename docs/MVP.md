@@ -136,4 +136,5 @@ apps/worker/     # BullMQ Worker（消费生成任务，调 ImageTo3DProvider，
 - **注册表**：`apps/api/src/units.mjs`（零依赖）——7 基本单位（含定义）+ 22 具名导出单位 + 常用组合单位，量纲向量 [m,kg,s,A,K,mol,cd]。
 - **接口**：`GET /api/system/units` → 完整注册表；AI 工具 `system.units`（按符号/名称/量纲过滤）。
 - **校验**：`semantic.validate` 检查 `entity.physics` 的量纲合法性（`parseDimension` 解析 `kg·m/s²`、`J/K`、`Ω` 等表达式，含 Unicode 上标 `²³⁻¹`）。
+- **画布约束**：`canvas.place` 读取实体 `physics.dimensions`（SI），按资产自然包围盒等比/逐轴缩放，使世界尺寸符合指定量纲（如起重机高 12 m → scale [12,12,12]）。
 - **零外部依赖**：纯数据注册表。

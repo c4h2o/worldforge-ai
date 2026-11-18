@@ -337,6 +337,7 @@ loop {
 - **组合导出单位**：m/s、m/s²、kg/m³、J/K、J/mol、mol/m³、cd/m² 等（量纲向量 [m,kg,s,A,K,mol,cd]）。
 - **注册表**：`apps/api/src/units.mjs`（零依赖）→ `GET /api/system/units` + AI 工具 `system.units`。
 - **量纲校验**：`semantic.validate` 用 `parseDimension` 解析实体 `physics` 属性单位（如 `kg·m/s²`、`J/K`、`Ω`，支持 Unicode 上标），确保量纲合法并与期望物理量一致。
+- **画布约束**：`canvas.place`/`createScene` 读取实体 `physics.dimensions`（SI），按资产自然包围盒（GLB POSITION min/max）等比/逐轴缩放，使实体世界尺寸符合指定量纲。
 
 
 ## 8. 技术栈选型

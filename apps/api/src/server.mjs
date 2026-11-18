@@ -146,17 +146,65 @@ function filmForScene(scene) {
   scene.film = film; persistScene(scene); return film;
 }
 
-function placeEntities(assetIds) {
+
+// ── 物理量纲 → 画布尺寸约束（SI，system.units 基础）──
+const EXTENT_CACHE = new Map();
+function assetExtent(aid) {
+  if (EXTENT_CACHE.has(aid)) return EXTENT_CACHE.get(aid);
+  const a = assets.get(aid);
+  if (!a || !a.local_path) return [1, 1, 1];
+  try {
+    const file = path.join(ASSETS_DIR, path.basename(a.local_path));
+    if (!fs.existsSync(file)) return [1, 1, 1];
+    const buf = fs.readFileSync(file);
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    let off = 12, gltf = null;
+    while (off < buf.byteLength) {
+      const len = dv.getUint32(off, true), type = dv.getUint32(off + 4, true);
+      if (type === 0x4E4F534A) gltf = JSON.parse(new TextDecoder().decode(new Uint8Array(buf.buffer, buf.byteOffset + off + 8, len)));
+      off += 8 + len;
+    }
+    let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (const mesh of (gltf && gltf.meshes) || []) for (const pr of mesh.primitives || []) {
+      const ac = gltf.accessors[pr.attributes && pr.attributes.POSITION];
+      if (ac && ac.min && ac.max) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], ac.min[k]); mx[k] = Math.max(mx[k], ac.max[k]); }
+    }
+    const ext = mn[0] === Infinity ? [1, 1, 1] : [mx[0] - mn[0] || 1, mx[1] - mn[1] || 1, mx[2] - mn[2] || 1];
+    EXTENT_CACHE.set(aid, ext); return ext;
+  } catch { return [1, 1, 1]; }
+}
+// entity.physics.dimensions = {length:{value,unit}, width:{...}, height:{...}} 或 {size:{value,unit}}（SI）
+// 按资产自然包围盒等比/逐轴缩放，使实体世界尺寸符合指定的 SI 量纲。
+function applyPhysicsScale(physics, extent) {
+  const d = physics && physics.dimensions;
+  if (!d || typeof d !== 'object') return [1, 1, 1];
+  const AXIS = { length: 0, width: 0, x: 0, height: 1, y: 1, depth: 2, z: 2 };
+  const axes = [null, null, null];
+  for (const [k, v] of Object.entries(d)) {
+    if (v && typeof v === 'object' && v.value !== undefined) {
+      if (k === 'size') { const m = Math.max(extent[0], extent[1], extent[2]) || 1; const sc = Number(v.value) / m; axes[0] = axes[1] = axes[2] = sc; }
+      else if (k in AXIS) { const a = AXIS[k]; axes[a] = Number(v.value) / (extent[a] || 1); }
+    }
+  }
+  const vals = [axes[0], axes[1], axes[2]].filter(x => x != null);
+  if (vals.length === 0) return [1, 1, 1];
+  if (vals.length === 1) return [vals[0], vals[0], vals[0]];        // 单轴 → 等比保持比例
+  return [axes[0] ?? vals[0], axes[1] ?? vals[0], axes[2] ?? vals[0]]; // 多轴 → 各自 + 补齐
+}
+
+function placeEntities(assetIds, specEntities = []) {
   return assetIds.map((aid, i) => {
     const col = i % 4, row = Math.floor(i / 4);
+    const se = specEntities.find(x => x.category === assets.get(aid)?.category);
+    const scale = applyPhysicsScale(se && se.physics, assetExtent(aid));
     return { id: aid, asset_id: aid,
-      transform: { position: [col * 3.2, 0, row * 3.2], rotation: [0, (i % 4) * Math.PI / 2, 0], scale: [1, 1, 1] },
+      transform: { position: [col * 3.2, 0, row * 3.2], rotation: [0, (i % 4) * Math.PI / 2, 0], scale },
       semantic_role: assets.get(aid)?.category || 'prop', placed_by: 'ai', locked: false };
   });
 }
 
-async function createScene(brief) {
-  const spec = parseBrief(brief);
+async function createScene(brief, specOverride) {
+  const spec = (specOverride && specOverride.entities) ? specOverride : parseBrief(brief);
   const ids = [];
   for (const ent of spec.entities) {
     const existing = [...assets.values()].find(a => a.category === ent.category);
@@ -176,7 +224,7 @@ async function createScene(brief) {
       ],
       cameras: [{ id: 'cam_main', position: [7, 7, 10], target: [0, 1, 0] }],
       zones: [{ id: 'zone_main', name: '主区', bounds: [-2, 0, -2, 10, 8, 10] }],
-      entities: placeEntities(ids),
+      entities: placeEntities(ids, spec.entities),
     },
     status: 'draft',
     'semantic.validate': async (args, ctx) => { const spec = args.spec || (args.brief ? parseBrief(args.brief) : null); if (!spec) throw new Error('缺少 spec 或 brief'); const v = validateUnits(spec); return { result: { ok: v.ok, issues: v.issues, entities_checked: spec.entities.length, note: '物理属性量纲基于 SI（见 system.units）' } }; },
@@ -227,7 +275,7 @@ export function createApp(options = {}) {
       if (a && Array.isArray(args.tags)) a.semantic_tags = [...new Set([...a.semantic_tags, ...args.tags])];
       return { result: { asset_id: args.asset_id, tags: a && a.semantic_tags } };
     },
-    'canvas.layout': async (args, ctx) => { const scene = await createScene(args.brief || ctx.brief); return { result: { scene_id: scene.id, entities: scene.scene_graph.entities.length, style: scene.style } }; },
+    'canvas.layout': async (args, ctx) => { const scene = await createScene(args.brief || ctx.brief, args.spec); return { result: { scene_id: scene.id, entities: scene.scene_graph.entities.length, style: scene.style, note: '实体物理尺寸已按 SI 约束缩放（见 system.units）' } }; },
     'critic.review': async () => { const score = assets.size >= 3 ? 82 : 55; return { result: { score, ok: score >= 70, issues: score >= 70 ? [] : ['资产数量不足 3'] } }; },
     'export.game': async () => { const scene = [...scenes.values()].at(-1); if (scene) fs.writeFileSync(path.join(OUT, 'scene.json'), JSON.stringify(scene, null, 2)); return { result: { path: 'output/scene.json', scene_id: scene && scene.id } }; },
     'export.film': async () => { const scene = [...scenes.values()].at(-1); if (!scene) throw new Error('先创建场景'); const film = filmForScene(scene); return { result: { film_id: film.id, shots: film.shots.length, duration: film.duration, player: '/film.html?id=' + scene.id } }; },
@@ -261,7 +309,7 @@ export function createApp(options = {}) {
 
       if (p === '/api/scenes' && req.method === 'POST') {
         const b = await readBody(req);
-        const scene = await createScene(b.brief || DEFAULT_BRIEF);
+        const scene = await createScene(b.brief || DEFAULT_BRIEF, b.spec);
         return json(res, 200, scene);
       }
       if (p === '/api/scenes' && req.method === 'GET') return json(res, 200, { scenes: [...scenes.values()] });
@@ -282,8 +330,9 @@ export function createApp(options = {}) {
         const aid = b.asset_id;
         if (!aid || !assets.has(aid)) return json(res, 400, { error: '未知 asset_id: ' + aid });
         const n = scene.scene_graph.entities.length;
+        const phScale = (b.physics ? applyPhysicsScale(b.physics, assetExtent(aid)) : null);
         const entity = { id: aid + '_e' + n, asset_id: aid,
-          transform: { position: b.position || [((n % 4) * 3.2) - 4, 0, (Math.floor(n / 4) * 3.2) - 4], rotation: b.rotation || [0, 0, 0], scale: b.scale || [1, 1, 1] },
+          transform: { position: b.position || [((n % 4) * 3.2) - 4, 0, (Math.floor(n / 4) * 3.2) - 4], rotation: b.rotation || [0, 0, 0], scale: b.scale || phScale || [1, 1, 1] },
           semantic_role: b.role || assets.get(aid).category, placed_by: b.placed_by || 'user', locked: !!b.locked, animation: b.animation || null };
         scene.scene_graph.entities.push(entity);
         persistScene(scene); return json(res, 200, entity);
