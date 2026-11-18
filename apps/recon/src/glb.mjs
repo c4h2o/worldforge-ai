@@ -12,6 +12,7 @@ const FACES = [
 ];
 const UVS = [[0,0],[1,0],[1,1],[0,1]];
 // 语义感知：各类别的长宽高比例（x,y,z）
+const ANIM = { crane:[{part:'jib',axis:'y',speed:0.4}], robot:[{part:'armL',axis:'x',speed:0.6},{part:'armR',axis:'x',speed:-0.6}], light:[{part:'head',axis:'y',speed:0.3}] };
 const RATIO = { container:[1.6,1.0,1.0], building:[1.0,1.7,1.0], robot:[0.6,1.9,0.6], crane:[0.5,2.1,0.5], ship:[2.2,0.6,0.6], light:[0.4,2.5,0.4], default:[1,1,1] };
 
 export function buildTexturedGLB(category, imagePng, w, h, name) {
@@ -107,58 +108,66 @@ export const PARTS = {
   default: [ { c:[0,0.5,0], s:[1,1,1], m:'tex' } ],
 };
 
-export function buildPartGLB(category, imagePng, name) {
+export function buildPartGLB(category, imgs, name) {
   const parts = PARTS[category] || PARTS.default;
+  if (!imgs || !imgs.length) throw new Error('无输入图像');
+  const partTex = parts.map((p, i) => p.m === 'tex' ? (imgs.length === 1 ? 0 : (i % imgs.length)) : -1);
+  const usedTex = [...new Set(partTex.filter(i => i >= 0))];
   const pos=[], nor=[], uv=[], idxRanges=[], mats=[];
-  const texMatIdx = parts.some(p=>p.m==='tex') ? 0 : null;
-  if (texMatIdx===0) mats.push({ name:name+'-tex', pbrMetallicRoughness:{ baseColorTexture:{index:0}, metallicFactor:0.0, roughnessFactor:0.9 }, doubleSided:true });
-  let base=0, accessor=3;
-  for (const p of parts) {
+  const texMatIdx = {};
+  usedTex.forEach((ti, k) => { texMatIdx[ti] = mats.length; mats.push({ name: name + '-tex' + k, pbrMetallicRoughness: { baseColorTexture: { index: k }, metallicFactor: 0.0, roughnessFactor: 0.9 }, doubleSided: true }); });
+  let base = 0, accessor = 3;
+  for (let pi = 0; pi < parts.length; pi++) {
+    const p = parts[pi];
     let matIdx;
-    if (p.m==='tex') matIdx = 0;
-    else { matIdx = mats.length; mats.push({ name:name+'-part'+matIdx, pbrMetallicRoughness:{ baseColorFactor:[...p.color,1], metallicFactor:0.1, roughnessFactor:0.8 }, doubleSided:true }); }
-    const idx=[];
+    if (partTex[pi] >= 0) matIdx = texMatIdx[partTex[pi]];
+    else { matIdx = mats.length; mats.push({ name: name + '-part' + matIdx, pbrMetallicRoughness: { baseColorFactor: [...p.color, 1], metallicFactor: 0.1, roughnessFactor: 0.8 }, doubleSided: true }); }
+    const idx = [];
     for (const fc of FACES) {
-      for (let i=0;i<4;i++){ const c=fc.c[i]; pos.push(p.c[0]+c[0]*p.s[0]/2, p.c[1]+c[1]*p.s[1]/2, p.c[2]+c[2]*p.s[2]/2); nor.push(fc.n[0],fc.n[1],fc.n[2]); uv.push(UVS[i][0],UVS[i][1]); }
-      idx.push(base,base+1,base+2,base,base+2,base+3); base+=4;
+      for (let i = 0; i < 4; i++) { const c = fc.c[i]; pos.push(p.c[0] + c[0]*p.s[0]/2, p.c[1] + c[1]*p.s[1]/2, p.c[2] + c[2]*p.s[2]/2); nor.push(fc.n[0], fc.n[1], fc.n[2]); uv.push(UVS[i][0], UVS[i][1]); }
+      idx.push(base, base+1, base+2, base, base+2, base+3); base += 4;
     }
     idxRanges.push({ idx, matIdx, accessor });
   }
-  const positions=new Float32Array(pos), normals=new Float32Array(nor), texcoords=new Float32Array(uv);
-  let min=[Infinity,Infinity,Infinity], max=[-Infinity,-Infinity,-Infinity];
-  for(let i=0;i<positions.length;i+=3){for(let k=0;k<3;k++){const v=positions[i+k];if(v<min[k])min[k]=v;if(v>max[k])max[k]=v;}}
-  const posB=positions.byteLength, norB=normals.byteLength, uvB=texcoords.byteLength, imgB=imagePng.length;
-  const idxBuffers = idxRanges.map(r=>Buffer.from(new Uint32Array(r.idx)));
-  const idxBs = idxBuffers.map(b=>b.length);
+  const positions = new Float32Array(pos), normals = new Float32Array(nor), texcoords = new Float32Array(uv);
+  let mn=[Infinity,Infinity,Infinity], mx=[-Infinity,-Infinity,-Infinity];
+  for (let i=0;i<positions.length;i+=3) for (let k=0;k<3;k++){ const v=positions[i+k]; if(v<mn[k])mn[k]=v; if(v>mx[k])mx[k]=v; }
+  const posB=positions.byteLength, norB=normals.byteLength, uvB=texcoords.byteLength;
+  const idxBuffers = idxRanges.map(r => Buffer.from(new Uint32Array(r.idx)));
+  const idxBs = idxBuffers.map(b => b.length);
   const idxTotal = idxBs.reduce((a,b)=>a+b,0);
-  const binLen = posB+norB+uvB+idxTotal+imgB;
+  const imgBufs = usedTex.map(ti => imgs[ti]);
+  const imgBs = imgBufs.map(b => b.length);
+  const imgTotal = imgBs.reduce((a,b)=>a+b,0);
+  const binLen = posB+norB+uvB+idxTotal+imgTotal;
+  const imgBVStart = 3 + idxRanges.length;
   const gltf = {
-    asset:{version:'2.0',generator:'worldforge-recon'}, scene:0, scenes:[{nodes:[0]}], nodes:[{mesh:0,name}],
+    asset: { version:'2.0', generator:'worldforge-recon', extras: { animations: ANIM[category] || [] } }, scene:0, scenes:[{nodes:[0]}], nodes:[{mesh:0,name}],
     meshes:[{ name, primitives: idxRanges.map((r,i)=>({ attributes:{POSITION:0,NORMAL:1,TEXCOORD_0:2}, indices:r.accessor, material:r.matIdx })) }],
     materials: mats,
-    images:[{ bufferView: 3+idxRanges.length, mimeType:'image/png', name:'concept' }],
+    images: usedTex.map((ti,k)=>({ bufferView: imgBVStart+k, mimeType:'image/png', name:'view'+k })),
     samplers:[{ magFilter:9729, minFilter:9987, wrapS:10497, wrapT:10497 }],
-    textures:[{ sampler:0, source:0 }],
+    textures: usedTex.map((ti,k)=>({ sampler:0, source:k })),
     buffers:[{ byteLength: binLen }],
     bufferViews:[
       { buffer:0, byteOffset:0, byteLength:posB, target:34962 },
       { buffer:0, byteOffset:posB, byteLength:norB, target:34962 },
       { buffer:0, byteOffset:posB+norB, byteLength:uvB, target:34962 },
       ...idxRanges.map((r,i)=>({ buffer:0, byteOffset:posB+norB+uvB+idxBs.slice(0,i).reduce((a,b)=>a+b,0), byteLength:idxBs[i], target:34963 })),
-      { buffer:0, byteOffset:posB+norB+uvB+idxTotal, byteLength:imgB },
+      ...usedTex.map((ti,k)=>({ buffer:0, byteOffset:posB+norB+uvB+idxTotal+imgBs.slice(0,k).reduce((a,b)=>a+b,0), byteLength:imgBs[k] })),
     ],
     accessors:[
-      { bufferView:0, componentType:5126, count:positions.length/3, type:'VEC3', min, max },
+      { bufferView:0, componentType:5126, count:positions.length/3, type:'VEC3', min:mn, max:mx },
       { bufferView:1, componentType:5126, count:normals.length/3, type:'VEC3' },
       { bufferView:2, componentType:5126, count:texcoords.length/2, type:'VEC2' },
       ...idxRanges.map((r,i)=>({ bufferView:3+i, componentType:5125, count:r.idx.length, type:'SCALAR' })),
     ],
   };
-  const jsonBytes=Buffer.from(JSON.stringify(gltf),'utf8');
-  const bin=Buffer.alloc(binLen);
+  const jsonBytes = Buffer.from(JSON.stringify(gltf),'utf8');
+  const bin = Buffer.alloc(binLen);
   Buffer.from(positions.buffer).copy(bin,0); Buffer.from(normals.buffer).copy(bin,posB); Buffer.from(texcoords.buffer).copy(bin,posB+norB);
   let off=posB+norB+uvB; for(const b of idxBuffers){ b.copy(bin,off); off+=b.length; }
-  imagePng.copy(bin, posB+norB+uvB+idxTotal);
+  for(const b of imgBufs){ b.copy(bin,off); off+=b.length; }
   const jsonPad=(4-(jsonBytes.length%4))%4, binPad=(4-(bin.length%4))%4;
   const jsonChunk=Buffer.concat([jsonBytes,Buffer.alloc(jsonPad,0x20)]), binChunk=Buffer.concat([bin,Buffer.alloc(binPad)]);
   const total=12+8+jsonChunk.length+8+binChunk.length;

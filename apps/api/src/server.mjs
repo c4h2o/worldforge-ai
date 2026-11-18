@@ -19,6 +19,9 @@ const WORLD_HTML = path.join(__dirname, '..', 'public', 'world.html');
 const WORLD_JS = path.join(__dirname, '..', 'public', 'world.mjs');
 const ASSETS_DIR = path.join(OUT, 'assets'), IMAGES_DIR = path.join(OUT, 'images'), SCENES_DIR = path.join(OUT, 'scenes');
 const ASSETS_META = path.join(OUT, 'assets.json');
+const FILM_HTML = path.join(__dirname, '..', 'public', 'film.html');
+const FILM_JS = path.join(__dirname, '..', 'public', 'film.mjs');
+const RENDERER_JS = path.join(__dirname, '..', 'public', 'renderer.mjs');
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.mjs':'text/javascript', '.json':'application/json', '.glb':'model/gltf-binary', '.png':'image/png', '.css':'text/css' };
 
 // ── 存储（内存 + 文件持久化）─────────────────────────
@@ -307,7 +310,9 @@ export function createApp(options = {}) {
         fs.writeFileSync(path.join(IMAGES_DIR, name), buf);
         return json(res, 200, { image_url: '/images/' + name, provider: activeImageProvider.name, prompt: b.prompt || 'concept' });
       }
-      if (p === '/film.html' && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(filmHtml()); }
+      if (p === '/film.html' && req.method === 'GET') { const data = fs.readFileSync(FILM_HTML); res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(data); }
+      if (p === '/film.mjs') { const data = fs.readFileSync(FILM_JS); res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(data); }
+      if (p === '/renderer.mjs') { const data = fs.readFileSync(RENDERER_JS); res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(data); }
       const filmRe = p.match(/^\/api\/scenes\/([^/]+)\/film$/);
       if (filmRe && (req.method === 'GET' || req.method === 'POST')) {
         const scene = scenes.get(filmRe[1]); if (!scene) return json(res, 404, { error: 'scene not found' });

@@ -29,10 +29,10 @@ function enqueue(payload, host) {
   (async () => {
     try {
       task.status = 'running'; task.progress = 15;
-      const img = await loadImage(payload.images[0]); task.progress = 40;
-      const { w, h } = pngSize(img);
+      const imgs = await Promise.all((payload.images||[]).slice(0,4).map(loadImage)); task.progress = 40;
+      const { w, h } = pngSize(imgs[0]);
       const name = 'recon_' + id + '.glb';
-      const glb = (PARTS[payload.category] ? buildPartGLB(payload.category, img, name) : buildTexturedGLB(payload.category || 'default', img, w, h, name));
+      const glb = (PARTS[payload.category] ? buildPartGLB(payload.category, imgs, name) : buildTexturedGLB(payload.category || 'default', imgs[0], w, h, name));
       fs.writeFileSync(path.join(OUT, name), glb); task.progress = 85;
       task.output = { model_url: 'http://' + host + '/recon/models/' + name, width: w, height: h, category: payload.category || 'default' };
       task.status = 'success'; task.progress = 100;
