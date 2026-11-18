@@ -13,7 +13,7 @@ import { runAgent, TOOL_DEFS } from './agent.mjs';
 import { createLLM } from './llm.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OUT = path.join(process.cwd(), 'output');
+const OUT = path.join(__dirname, '../../../output');
 const ASSETS_DIR = path.join(OUT, 'assets'), IMAGES_DIR = path.join(OUT, 'images'), SCENES_DIR = path.join(OUT, 'scenes');
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.mjs':'text/javascript', '.json':'application/json', '.glb':'model/gltf-binary', '.png':'image/png', '.css':'text/css' };
 
@@ -98,6 +98,8 @@ async function processTask(id) {
 }
 
 // ── 世界画布：AI 布局摆放（网格 + 分区）───────────────
+function persistScene(scene) { fs.writeFileSync(path.join(SCENES_DIR, scene.id + '.json'), JSON.stringify(scene, null, 2)); }
+
 function placeEntities(assetIds) {
   return assetIds.map((aid, i) => {
     const col = i % 4, row = Math.floor(i / 4);
@@ -196,6 +198,45 @@ export function createApp(options = {}) {
         return json(res, 200, scene);
       }
       if (p === '/api/scenes' && req.method === 'GET') return json(res, 200, { scenes: [...scenes.values()] });
+      // 场景变更（世界画布编辑 → 持久化）
+      const entRe = p.match(/^\/api\/scenes\/([^/]+)\/entities\/([^/]+)$/);
+      const entColRe = p.match(/^\/api\/scenes\/([^/]+)\/entities$/);
+      const envRe = p.match(/^\/api\/scenes\/([^/]+)\/environment$/);
+      if (envRe && req.method === 'PATCH') {
+        const scene = scenes.get(envRe[1]); if (!scene) return json(res, 404, { error: 'scene not found' });
+        const b = await readBody(req);
+        if (b.environment) scene.scene_graph.environment = { ...scene.scene_graph.environment, ...b.environment };
+        if (Array.isArray(b.lights)) scene.scene_graph.lights = b.lights;
+        persistScene(scene); return json(res, 200, scene);
+      }
+      if (entColRe && req.method === 'POST') {
+        const scene = scenes.get(entColRe[1]); if (!scene) return json(res, 404, { error: 'scene not found' });
+        const b = await readBody(req);
+        const aid = b.asset_id;
+        if (!aid || !assets.has(aid)) return json(res, 400, { error: '未知 asset_id: ' + aid });
+        const n = scene.scene_graph.entities.length;
+        const entity = { id: aid + '_e' + n, asset_id: aid,
+          transform: { position: b.position || [((n % 4) * 3.2) - 4, 0, (Math.floor(n / 4) * 3.2) - 4], rotation: b.rotation || [0, 0, 0], scale: b.scale || [1, 1, 1] },
+          semantic_role: b.role || assets.get(aid).category, placed_by: b.placed_by || 'user', locked: !!b.locked };
+        scene.scene_graph.entities.push(entity);
+        persistScene(scene); return json(res, 200, entity);
+      }
+      if (entRe && req.method === 'PATCH') {
+        const scene = scenes.get(entRe[1]); if (!scene) return json(res, 404, { error: 'scene not found' });
+        const ent = scene.scene_graph.entities.find(x => x.id === entRe[2]);
+        if (!ent) return json(res, 404, { error: 'entity not found' });
+        const b = await readBody(req);
+        if (b.transform) ent.transform = { ...ent.transform, ...b.transform };
+        if (b.semantic_role) ent.semantic_role = b.semantic_role;
+        if (b.locked !== undefined) ent.locked = !!b.locked;
+        persistScene(scene); return json(res, 200, ent);
+      }
+      if (entRe && req.method === 'DELETE') {
+        const scene = scenes.get(entRe[1]); if (!scene) return json(res, 404, { error: 'scene not found' });
+        scene.scene_graph.entities = scene.scene_graph.entities.filter(x => x.id !== entRe[2]);
+        persistScene(scene); return json(res, 200, { deleted: entRe[2] });
+      }
+
       if (p.startsWith('/api/scenes/') && req.method === 'GET') {
         const s = scenes.get(p.slice('/api/scenes/'.length));
         return s ? json(res, 200, s) : json(res, 404, { error: 'scene not found' });
@@ -226,35 +267,146 @@ export function createApp(options = {}) {
 }
 
 function worldHtml(){ return `<!doctype html><html><head><meta charset="utf-8"><title>WorldForge — World Canvas</title>
-<style>html,body{margin:0;height:100%;background:#0b1020;color:#cfe;font-family:monospace;overflow:hidden}#hud{position:fixed;top:8px;left:8px;font-size:12px;background:#0009;padding:8px 12px;border-radius:8px;z-index:10;max-width:40ch}#hud .t{color:#5df}#hud .k{color:#f5a}#loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#5df;z-index:20;font-size:15px}</style>
+<style>
+html,body{margin:0;height:100%;background:#0b1020;color:#cfe;font-family:monospace;overflow:hidden}
+#hud{position:fixed;top:8px;left:8px;font-size:12px;background:#0009;padding:8px 12px;border-radius:8px;z-index:10;max-width:44ch;line-height:1.5}
+#hud .t{color:#5df}#hud .k{color:#f5a}
+#panel{position:fixed;top:8px;right:8px;width:250px;background:#0009;border-radius:8px;z-index:10;padding:10px;font-size:12px;max-height:92vh;overflow:auto}
+#panel h3{color:#5df;margin:4px 0 8px;font-size:13px}
+#panel .row{margin-bottom:8px}
+#panel label{color:#8af;display:inline-block;width:70px}
+#panel input[type=text],#panel select{width:150px;background:#123;color:#cfe;border:1px solid #345;border-radius:4px;padding:3px 5px}
+#panel input[type=color]{width:40px;height:22px;border:none;background:none;padding:0;vertical-align:middle}
+#panel input[type=range]{width:120px;vertical-align:middle}
+#lib{max-height:300px;overflow:auto;border-top:1px solid #345;margin-top:8px;padding-top:8px}
+#lib .item{display:flex;justify-content:space-between;align-items:center;padding:3px 4px;border-radius:4px;cursor:pointer}
+#lib .item:hover{background:#1a2a44}
+#lib .item button{background:#0a5;border:none;color:#000;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px}
+#lib .item button:hover{background:#2c8}
+#loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#5df;z-index:20;font-size:15px}
+#hint{position:fixed;bottom:8px;left:8px;font-size:11px;color:#678;z-index:10}
+</style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script></head>
-<body><div id="hud"></div><div id="loading">loading world…</div>
+<body><div id="hud"></div><div id="panel"></div><div id="hint">拖拽实体移动 · 滚轮缩放 · 右键平移 · 面板可编辑环境并复用资产库</div><div id="loading">loading world…</div>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-const scene = new THREE.Scene(); scene.background = new THREE.Color('#0b1020'); scene.fog = new THREE.Fog('#0b1020', 25, 80);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0b1020');
+scene.fog = new THREE.Fog('#0b1020', 25, 80);
 const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 300); camera.position.set(7,7,10);
 const renderer = new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); document.body.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement); controls.target.set(0,1,0);
-scene.add(new THREE.HemisphereLight(0x8899ff,0x223,0.6));
-const d=new THREE.DirectionalLight(0xff2a6d,1.2); d.position.set(5,8,4); scene.add(d);
+const hemi = new THREE.HemisphereLight(0x8899ff,0x223,0.6); scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xff2a6d,1.2); dir.position.set(5,8,4); scene.add(dir);
 scene.add(new THREE.GridHelper(40,40,0x2af,0x145));
 const loader = new GLTFLoader();
-async function boot(){
-  let sceneData = (await (await fetch('/api/scenes')).json()).scenes[0];
-  if(!sceneData){ sceneData = await (await fetch('/api/scenes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief: prompt('世界愿景')||'一座雨夜赛博朋克港口'})})).json(); }
-  const ents = sceneData.scene_graph.entities;
-  let loaded=0;
-  for(const e of ents){
-    try{
-      const g = await new Promise((ok,err)=>loader.load('/assets/'+e.asset_id+'.glb',ok,undefined,err));
-      const m=g.scene; m.position.set(...e.transform.position); m.rotation.set(...e.transform.rotation); m.scale.set(...e.transform.scale); scene.add(m);
-    }catch(_){}
-    if(++loaded>=ents.length){ document.getElementById('loading').style.display='none'; }
-  }
-  document.getElementById('hud').innerHTML = '<div class="t">WorldForge AI · World Canvas</div>场景: <span class="k">'+sceneData.name+'</span> · 风格 <span class="k">'+sceneData.style+'</span> · 实体 <span class="k">'+ents.length+'</span><br>拖拽旋转 · 滚轮缩放 · 右键平移';
+
+let world = null, assetLib = [], entityMeshes = new Map(), assetCache = new Map(), dragging = null;
+const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+const entityRoot = new THREE.Group(); scene.add(entityRoot);
+
+function el(tag, attrs, parent){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ if(k==='text') e.textContent=attrs[k]; else if(k==='on'){ for(const ev in attrs[k]) e.addEventListener(ev, attrs[k][ev]); } else e[k]=attrs[k]; } if(parent) parent.appendChild(e); return e; }
+
+async function jget(u){ return (await fetch(u)).json(); }
+async function jsend(u, method, body){ const r=await fetch(u,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}); return {code:r.status, body: await r.json()}; }
+
+async function loadSceneData(){
+  const list = await jget('/api/scenes');
+  if(list.scenes && list.scenes[0]) return list.scenes[0];
+  const created = await jsend('/api/scenes','POST',{brief:'一座雨夜赛博朋克港口，起重机、集装箱堆场、巡逻机器人，蓝红霓虹'});
+  return created.body;
 }
+
+async function getMesh(aid){
+  if(assetCache.has(aid)) return assetCache.get(aid);
+  const g = await new Promise((ok,err)=>loader.load('/assets/'+aid+'.glb',ok,undefined,err));
+  assetCache.set(aid, g); return g;
+}
+
+function clearEntities(){ while(entityRoot.children.length) entityRoot.remove(entityRoot.children[0]); entityMeshes.clear(); }
+
+async function renderWorld(){
+  clearEntities();
+  for(const e of world.scene_graph.entities){
+    try{
+      const g = await getMesh(e.asset_id);
+      const m = g.scene.clone();
+      m.position.set(...e.transform.position); m.rotation.set(...e.transform.rotation); m.scale.set(...e.transform.scale);
+      m.userData.entityId = e.id; entityRoot.add(m); entityMeshes.set(e.id, m);
+    }catch(_){}
+  }
+  applyEnvironment();
+  updateHud();
+}
+
+function applyEnvironment(){
+  const env = world.scene_graph.environment || {};
+  if(env.sky){ scene.background.set(env.sky); scene.fog.color.set(env.sky); }
+  if(env.fog !== undefined) scene.fog.near = 10, scene.fog.far = 30 + (1-env.fog)*80;
+  const lights = world.scene_graph.lights || [];
+  for(const L of lights){ if(L.type==='hemisphere') hemi.intensity = L.intensity ?? hemi.intensity, hemi.color.set(L.color||'#8899ff'); if(L.type==='directional') dir.intensity = L.intensity ?? dir.intensity, dir.color.set(L.color||'#ff2a6d'); }
+}
+
+function updateHud(){
+  const ents = world.scene_graph.entities.length;
+  document.getElementById('hud').innerHTML = '<div class="t">WorldForge AI · World Canvas</div>场景: <span class="k">'+world.name+'</span> · 风格 <span class="k">'+world.style+'</span> · 实体 <span class="k">'+ents+'</span><br>拖拽实体移动 · 面板编辑环境/资产';
+}
+
+function buildPanel(){
+  const p = document.getElementById('panel'); p.innerHTML = '';
+  el('h3', {text:'环境 / 光照'}, p);
+  const env = world.scene_graph.environment || {};
+  const row = el('div',{className:'row'},p);
+  el('label',{text:'天空'},row);
+  const sky = el('input',{type:'color', value: env.sky||'#0b1020'},row);
+  sky.oninput = ()=>{ world.scene_graph.environment.sky = sky.value; scene.background.set(sky.value); scene.fog.color.set(sky.value); };
+  sky.onchange = ()=> jsend('/api/scenes/'+world.id+'/environment','PATCH',{environment:{sky:sky.value}});
+  const row2 = el('div',{className:'row'},p);
+  el('label',{text:'雾量'},row2);
+  const fog = el('input',{type:'range',min:'0',max:'1',step:'0.05', value: env.fog!==undefined?env.fog:0.6},row2);
+  fog.oninput = ()=>{ scene.fog.far = 30 + (1-Number(fog.value))*80; };
+  fog.onchange = ()=> jsend('/api/scenes/'+world.id+'/environment','PATCH',{environment:{fog:Number(fog.value)}});
+  const row3 = el('div',{className:'row'},p);
+  el('label',{text:'光强'},row3);
+  const li = el('input',{type:'range',min:'0',max:'3',step:'0.1', value: dir.intensity},row3);
+  li.oninput = ()=>{ dir.intensity = Number(li.value); };
+  li.onchange = ()=> jsend('/api/scenes/'+world.id+'/environment','PATCH',{lights:[{type:'directional',color:'#ff2a6d',intensity:Number(li.value),position:[5,8,4]},{type:'hemisphere',color:'#8899ff',intensity:hemi.intensity,position:[0,10,0]}]});
+
+  // 资产库复用
+  el('h3',{text:'资产库（复用）'},p);
+  const search = el('input',{type:'text',placeholder:'搜索类别/标签…'},p); search.style.width='100%'; search.style.boxSizing='border-box';
+  const lib = el('div',{id:'lib'},p);
+  function renderLib(q){
+    lib.innerHTML='';
+    const items = assetLib.filter(a=>!q || (a.category+' '+(a.semantic_tags||[]).join(' ')).toLowerCase().includes(q.toLowerCase()));
+    for(const a of items){
+      const rowE = el('div',{className:'item'},lib);
+      el('span',{text:a.category+'  ×'+((a.mesh_stats&&a.mesh_stats.faces)||0)},rowE);
+      const b = el('button',{text:'放置'},rowE);
+      b.onclick = async ()=>{ const r = await jsend('/api/scenes/'+world.id+'/entities','POST',{asset_id:a.id, role:a.category}); if(r.code===200){ world.scene_graph.entities.push(r.body); await renderWorld(); } };
+    }
+  }
+  search.oninput = ()=> renderLib(search.value);
+  renderLib('');
+}
+
+async function boot(){
+  world = await loadSceneData();
+  assetLib = (await jget('/api/assets')).assets || [];
+  document.getElementById('loading').style.display='none';
+  await renderWorld();
+  buildPanel();
+}
+
+// 拖拽移动
+renderer.domElement.addEventListener('pointerdown', (e)=>{ if(e.button!==0) return; pointer.set((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1); raycaster.setFromCamera(pointer,camera); const hits=raycaster.intersectObjects(entityRoot.children,true); if(hits.length){ let o=hits[0].object; while(o && !entityMeshes.has(Object.keys(entityMeshes).find(k=>entityMeshes.get(k)===o))){ o=o.parent; if(o===entityRoot) break; } if(o && o!==entityRoot){ const eid=Object.keys(entityMeshes).find(k=>entityMeshes.get(k)===o)||Object.keys(entityMeshes).find(k=>entityMeshes.get(k)===hits[0].object); const mesh = entityMeshes.get(eid) || hits[0].object; dragging={eid, mesh, ent: world.scene_graph.entities.find(x=>x.id===eid)}; controls.enabled=false; } } });
+addEventListener('pointermove', (e)=>{ if(!dragging) return; pointer.set((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1); raycaster.setFromCamera(pointer,camera); const hit=new THREE.Vector3(); if(raycaster.ray.intersectPlane(groundPlane,hit)){ dragging.mesh.position.set(hit.x, 0, hit.z); dragging.ent.transform.position=[hit.x,0,hit.z]; } });
+addEventListener('pointerup', async ()=>{ if(!dragging) return; const d=dragging; dragging=null; controls.enabled=true; if(d.ent) await jsend('/api/scenes/'+world.id+'/entities/'+d.ent.id,'PATCH',{transform:{position:d.ent.transform.position}}); });
+
 boot();
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 (function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene,camera); })();

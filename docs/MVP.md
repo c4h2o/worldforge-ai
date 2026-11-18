@@ -32,6 +32,8 @@ npm run dev        # = node apps/api/src/server.mjs  （零依赖，无需 insta
 | GET | `/` | 世界画布（Three.js） | — | HTML |
 | GET | `/assets/*` · `/images/*` · `/scenes/*` | 静态产物 | — | 文件 |
 
+**世界画布编辑**（Phase 1b）：`PATCH /api/scenes/:id/environment`（环境/光照）、`POST /api/scenes/:id/entities`（资产库复用放置）、`PATCH | DELETE /api/scenes/:id/entities/:eid`（移动/删除），均实时落盘 `output/scenes/:id.json`。前端画布支持**拖拽移动 + 资产库搜索复用 + 环境光照面板**。
+
 **Task 结构**：`{id, type, status, progress, params, result, createdAt}`；`result = {model_url, thumbnail, asset_id, category}`。
 **WorldScene**：`{id, name, brief, spec_id, style, seed, scene_graph{environment, lights, cameras, zones, entities[]}, status}`。
 
