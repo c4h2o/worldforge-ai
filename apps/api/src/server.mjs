@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { parseBrief, DEFAULT_BRIEF, categoryColor, boxesForCategory } from '../../demo/src/semantic.mjs';
 import { buildGLB } from '../../demo/src/glb.mjs';
 import { conceptImage } from '../../demo/src/png.mjs';
+import { createProvider, downloadModel, sleep } from './providers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(process.cwd(), 'output');
@@ -15,10 +16,16 @@ const ASSETS_DIR = path.join(OUT, 'assets'), IMAGES_DIR = path.join(OUT, 'images
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.mjs':'text/javascript', '.json':'application/json', '.glb':'model/gltf-binary', '.png':'image/png', '.css':'text/css' };
 
 // ── 存储（内存 + 文件持久化）─────────────────────────
+// 轻量 .env 加载（零依赖）
+function loadEnv(){ try { const f = path.join(process.cwd(), '.env'); const s = fs.readFileSync(f, 'utf8'); for (const line of s.split('\n')) { const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/); if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, ''); } } catch {} }
+loadEnv();
+
 const tasks = new Map();   // id -> Task
 const assets = new Map();  // id -> Asset
 const scenes = new Map();  // id -> WorldScene
 let taskSeq = 0, assetSeq = 0;
+let activeProvider = createProvider('mock', process.env);
+let providerError = null;
 
 function ensureDirs(){ for (const d of [ASSETS_DIR, IMAGES_DIR, SCENES_DIR]) fs.mkdirSync(d, { recursive: true }); }
 
@@ -37,26 +44,52 @@ async function processTask(id) {
   task.status = 'running'; task.progress = 10;
   try {
     const p = task.params;
-    let category = p.category || 'prop';
-    // 若传了上游图/语义，从文件名猜类别（mock 简化）
-    if (!p.category && p.input) category = (String(p.input).match(/[a-z_]+/)?.[0]) || 'prop';
-    // 生成程序化资产（学 Tripo image-to-model 的产物形态）
-    const glb = buildGLB(boxesForCategory(category), category);
-    const modelName = id + '.glb', thumbName = id + '.png';
-    fs.writeFileSync(path.join(ASSETS_DIR, modelName), glb);
-    fs.writeFileSync(path.join(IMAGES_DIR, thumbName), conceptImage(categoryColor(category), taskSeq));
-    task.progress = 80;
-    const asset = {
-      id, name: id, category,
-      local_path: '/assets/' + modelName, thumbnail: '/images/' + thumbName,
-      mesh_stats: { faces: boxesForCategory(category).length * 12, verts: 24 * boxesForCategory(category).length, parts: 1 },
-      materials: ['pbr'], animations: [],
-      semantic_tags: [category], provenance: { spec_id: p.spec_id || null, image_ids: [], provider: p.provider, task_ids: [id] },
-      version: 1, frozen: false,
-    };
-    assets.set(id, asset);
-    task.status = 'success'; task.progress = 100;
-    task.result = { model_url: asset.local_path, thumbnail: asset.thumbnail, asset_id: id, category };
+    if (activeProvider.name === 'mock') {
+      // 程序化（零依赖，无凭据也可跑）
+      let category = p.category || 'prop';
+      if (!p.category && p.input) category = (String(p.input).match(/[a-z_]+/)?.[0]) || 'prop';
+      const glb = buildGLB(boxesForCategory(category), category);
+      const modelName = id + '.glb', thumbName = id + '.png';
+      fs.writeFileSync(path.join(ASSETS_DIR, modelName), glb);
+      fs.writeFileSync(path.join(IMAGES_DIR, thumbName), conceptImage(categoryColor(category), taskSeq));
+      task.progress = 80;
+      const asset = {
+        id, name: id, category,
+        local_path: '/assets/' + modelName, thumbnail: '/images/' + thumbName,
+        mesh_stats: { faces: boxesForCategory(category).length * 12, verts: 24 * boxesForCategory(category).length, parts: 1 },
+        materials: ['pbr'], animations: [],
+        semantic_tags: [category], provenance: { spec_id: p.spec_id || null, image_ids: [], provider: p.provider, task_ids: [id] },
+        version: 1, frozen: false,
+      };
+      assets.set(id, asset);
+      task.status = 'success'; task.progress = 100;
+      task.result = { model_url: asset.local_path, thumbnail: asset.thumbnail, asset_id: id, category };
+    } else {
+      // 真实 Provider（tripo | triposr）：提交 → 轮询 → 下载 → 入库
+      const handle = await activeProvider.fromImage(p.input, { model: p.model, face_limit: p.face_limit, texture: p.texture });
+      task.progress = 30; task.result = { upstream_task: handle.task_id };
+      let st = await activeProvider.poll(handle.task_id);
+      let guard = 0;
+      while ((st.status === 'queued' || st.status === 'running') && guard++ < 600) { await sleep(1000); st = await activeProvider.poll(handle.task_id); }
+      if (st.status !== 'success' || !st.output) throw new Error('上游生成失败: ' + JSON.stringify(st));
+      const modelUrl = st.output.model_url || (Array.isArray(st.output.model_urls) ? st.output.model_urls[0] : null) || (st.output.output && st.output.output.model_url);
+      const glb = await downloadModel(modelUrl);
+      const modelName = id + '.glb';
+      fs.writeFileSync(path.join(ASSETS_DIR, modelName), glb);
+      task.progress = 90;
+      const category = p.category || 'model';
+      const asset = {
+        id, name: id, category,
+        local_path: '/assets/' + modelName, thumbnail: null,
+        mesh_stats: { faces: 0, verts: 0, parts: 0 },
+        materials: ['pbr'], animations: [],
+        semantic_tags: [category], provenance: { spec_id: p.spec_id || null, image_ids: [p.input || ''], provider: activeProvider.name, task_ids: [handle.task_id] },
+        version: 1, frozen: false,
+      };
+      assets.set(id, asset);
+      task.status = 'success'; task.progress = 100;
+      task.result = { model_url: asset.local_path, thumbnail: null, asset_id: id, category, upstream_task: handle.task_id };
+    }
   } catch (e) {
     task.status = 'failed'; task.result = { error: String(e && e.message || e) };
   }
@@ -108,13 +141,14 @@ function serveFile(res, filePath){ fs.readFile(filePath, (err, data) => { if (er
 
 export function createApp(options = {}) {
   ensureDirs();
-  const provider = options.provider || process.env.IMG3D_PROVIDER || 'mock';
+  try { activeProvider = createProvider(options.provider || process.env.IMG3D_PROVIDER || 'mock', process.env); providerError = null; }
+  catch (e) { activeProvider = createProvider('mock', process.env); providerError = String(e && e.message || e); }
   const server = http.createServer(async (req, res) => {
     const u = new URL(req.url || '/', 'http://x');
     const p = u.pathname;
     try {
       // API
-      if (p === '/api/health') return json(res, 200, { ok: true, provider, tasks: tasks.size, assets: assets.size, scenes: scenes.size });
+      if (p === '/api/health') return json(res, 200, { ok: true, provider: activeProvider.name, provider_error: providerError, tasks: tasks.size, assets: assets.size, scenes: scenes.size });
 
       if (p === '/api/generation/image-to-model' && req.method === 'POST') {
         const b = await readBody(req);

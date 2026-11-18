@@ -47,7 +47,11 @@ packages/orchestrator/    # AI 编排 + 审美批评
 
 ## 5. 实现要点
 
-- **Provider 抽象**：`createApp({provider})` 或 `IMG3D_PROVIDER=mock|tripo|triposr`。默认 `mock`（程序化 GLB）；填 `TRIPO_API_KEY` 切 `tripo`。
+- **Provider 抽象**：`createApp({provider})` 或 `IMG3D_PROVIDER=mock|tripo|triposr`（`.env` 加载）。
+  - `mock`（默认）：程序化 GLB，零依赖、无凭据可跑（CI/联调）。
+  - `tripo`：Tripo 商用 API。任务管线 = `fromImage(input)` → 轮询 `/tasks/:id` → 下载 `model_url` → 入库为本地 `/assets/:id.glb`；`result.upstream_task` 保留上游 id。**input 需为可公开访问的图片 URL**。
+  - `triposr`：自托管 TripoSR/SG/SF（`TRIPOSR_ENDPOINT`，默认 `http://localhost:8080`），POST `/infer` + 轮询。
+  - **优雅回退**：真实 Provider 构造失败（如缺 key）→ 自动回退 `mock`，`/api/health` 返回 `provider_error` 说明原因，服务不中断。
 - **任务队列**：当前为**内存 Map + 异步处理**（`enqueue` → `processTask`）；生产替换为 BullMQ/Redis。
 - **资产库**：`Map<id, Asset>`，含语义标签、来源链、缩略图；生产持久化到 Postgres + S3。
 - **世界画布**：`POST /api/scenes` 内部对每个语义实体提交生 3D 任务并摆放（网格/分区），前端 Three.js 加载 GLB 呈现。
