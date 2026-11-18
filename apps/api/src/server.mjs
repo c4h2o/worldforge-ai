@@ -11,6 +11,7 @@ import { conceptImage } from '../../demo/src/png.mjs';
 import { createProvider, downloadModel, sleep } from './providers.mjs';
 import { getUnits } from './units.mjs';
 import { runAgent, TOOL_DEFS } from './agent.mjs';
+import { renderScene } from './preview.mjs';
 import { reviewScene, autofixScene } from './critic.mjs';
 import { createLLM } from './llm.mjs';
 import { createImageProvider } from './image-providers.mjs';
@@ -174,6 +175,17 @@ function assetExtent(aid) {
     EXTENT_CACHE.set(aid, ext); return ext;
   } catch { return [1, 1, 1]; }
 }
+// 预览：按资产 id 取 GLB 绝对路径
+function assetPathFor(aid) { const a = assets.get(aid); return a && a.local_path ? path.join(ASSETS_DIR, path.basename(a.local_path)) : null; }
+// 软光栅渲染场景预览（零依赖自研光栅器），落盘并返回图片 URL
+function previewForScene(scene, w, h) {
+  const out = renderScene(scene, { W: w || 1024, H: h || 576, assetFor: assetPathFor });
+  if (!out.ok) throw new Error(out.error || '预览渲染失败');
+  const name = 'scene_preview_' + scene.id + '.png';
+  fs.writeFileSync(path.join(IMAGES_DIR, name), Buffer.from(out.png));
+  return { url: '/images/' + name, width: out.width, height: out.height, shaded: out.shaded, ms: out.ms };
+}
+
 // entity.physics.dimensions = {length:{value,unit}, width:{...}, height:{...}} 或 {size:{value,unit}}（SI）
 // 按资产自然包围盒等比/逐轴缩放，使实体世界尺寸符合指定的 SI 量纲。
 function applyPhysicsScale(physics, extent) {
@@ -334,6 +346,7 @@ export function createApp(options = {}) {
       return { result: { scene_id: scene.id, ...r } };
     },
     'export.game': async () => { const scene = [...scenes.values()].at(-1); if (scene) fs.writeFileSync(path.join(OUT, 'scene.json'), JSON.stringify(scene, null, 2)); return { result: { path: 'output/scene.json', scene_id: scene && scene.id } }; },
+    'scene.preview': async (args) => { const scene = (args.scene_id && scenes.get(args.scene_id)) || [...scenes.values()].at(-1); if (!scene) throw new Error('先创建场景'); const r = previewForScene(scene, args.w, args.h); return { result: { scene_id: scene.id, image_url: r.url, width: r.width, height: r.height, shaded: r.shaded } }; },
     'export.film': async () => { const scene = [...scenes.values()].at(-1); if (!scene) throw new Error('先创建场景'); const film = filmForScene(scene); return { result: { film_id: film.id, shots: film.shots.length, duration: film.duration, player: '/film.html?id=' + scene.id } }; },
   };
 
@@ -446,6 +459,17 @@ export function createApp(options = {}) {
         if (!sc) return json(res, 404, { error: '场景不存在' });
         const spec = parseBrief(sc.brief || '');
         const rv = reviewScene(sc, { extentFor: assetExtent, spec }); return json(res, 200, { scene_id: sc.id, entities: sc.scene_graph.entities.length, clean: rv.issues.length === 0, ...rv });
+      }
+      const previewRe = p.match(/^\/api\/scenes\/([^/]+)\/preview$/);
+      if (previewRe && req.method === 'GET') {
+        const sc = scenes.get(previewRe[1]);
+        if (!sc) return json(res, 404, { error: 'scene not found' });
+        const pw = parseInt(u.searchParams.get('w') || '1024', 10) || 1024;
+        const ph = parseInt(u.searchParams.get('h') || '576', 10) || 576;
+        const info = previewForScene(sc, pw, ph);
+        const buf = fs.readFileSync(path.join(IMAGES_DIR, path.basename(info.url)));
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buf.length, 'Cache-Control': 'no-cache' });
+        return res.end(buf);
       }
       const filmRe = p.match(/^\/api\/scenes\/([^/]+)\/film$/);
       if (filmRe && (req.method === 'GET' || req.method === 'POST')) {

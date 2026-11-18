@@ -12,7 +12,8 @@ export const TOOL_DEFS = [
   { type: 'function', function: { name: 'critic.review', description: '审美/一致性检查，给出评分与问题。', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'export.game', description: '导出可玩场景（glTF+场景JSON）。', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'system.units', description: '查询 SI 单位系统（7 基本单位、22 具名导出单位、常用组合单位及其定义与量纲）。', parameters: { type: 'object', properties: { q: { type: 'string', description: '可选：按符号/名称/量纲过滤，如 N、kg·m/s²、力' } } } } },
-  { type: 'function', function: { name: 'export.film', description: '生成镜头序列并导出成片（浏览器渲染）。', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'scene.preview', description: '用自研零依赖软光栅器渲染场景预览图（PNG），供 AI 视觉审查构图/比例/遮挡。', parameters: { type: 'object', properties: { scene_id: { type: 'string' }, w: { type: 'number' }, h: { type: 'number' } } } } },
+{ type: 'function', function: { name: 'export.film', description: '生成镜头序列并导出成片（浏览器渲染）。', parameters: { type: 'object', properties: {} } } },
 ];
 
 export function systemPrompt(brief) {
