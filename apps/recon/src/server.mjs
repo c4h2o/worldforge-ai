@@ -5,7 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildTexturedGLB } from './glb.mjs';
+import { buildTexturedGLB, buildPartGLB, PARTS } from './glb.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(__dirname, '..', '..', '..', 'output', 'recon');
@@ -32,7 +32,7 @@ function enqueue(payload, host) {
       const img = await loadImage(payload.images[0]); task.progress = 40;
       const { w, h } = pngSize(img);
       const name = 'recon_' + id + '.glb';
-      const glb = buildTexturedGLB(payload.category || 'default', img, w, h, name);
+      const glb = (PARTS[payload.category] ? buildPartGLB(payload.category, img, name) : buildTexturedGLB(payload.category || 'default', img, w, h, name));
       fs.writeFileSync(path.join(OUT, name), glb); task.progress = 85;
       task.output = { model_url: 'http://' + host + '/recon/models/' + name, width: w, height: h, category: payload.category || 'default' };
       task.status = 'success'; task.progress = 100;
