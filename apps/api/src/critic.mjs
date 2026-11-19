@@ -201,40 +201,9 @@ export function autofixScene(scene, opts = {}) {
           const spanY = zy1 - zy0, hgt = ext[1] * scl[1];
           if (spanY > 0 && hgt > spanY) { scl[1] *= spanY / hgt; moved = true; }   // 超高 → 压缩 y 使整体入界
           if (pos[1] < zy0) { pos[1] = zy0; moved = true; }
+          if (pos[1] + ext[1] * scl[1] > zy1) { pos[1] = Math.max(zy0, zy1 - ext[1] * scl[1]); moved = true; }   // 顶到天花板 → 下沉入界
           if (moved) { e.transform.position = pos; e.transform.scale = scl; applied.push({ code: iss.code, id: e.id, position: pos, scale: scl }); changed = true; }
-          else markUnresolved({ code: iss.code, id: e.id, msg: iss.msg, note: '分区容不下该尺寸，需缩小分区或移除实体' });
-          break;
-        }
-        case 'OVERLAP': {
-          const ea = ents().find(x => x.id === (iss.ids || [])[0]);
-          const eb = ents().find(x => x.id === (iss.ids || [])[1]);
-          if (ea && eb) {
-            const wa = worldBox(ea, extentFor(ea.asset_id || ea.id)), wb = worldBox(eb, extentFor(eb.asset_id || eb.id));
-            const half = (b, k) => (b.max[k] - b.min[k]) / 2;
-            const cen = (b, k) => (b.min[k] + b.max[k]) / 2;
-            const pick = [0, 2].map(ax => ({ ax, gap: half(wa, ax) + half(wb, ax) + 0.4 - Math.abs(cen(wa, ax) - cen(wb, ax)) }))
-              .sort((p, q) => p.gap - q.gap)[0];
-            const zone0 = ((scene && scene.scene_graph && scene.scene_graph.zones) || [])[0];
-            const others = ents().filter(x => x.id !== eb.id);
-            // 分区内没有空位时绝不"最小位移"——挪开必然越界，制造新的 OUT_OF_ZONE，
-            // 与 OUT_OF_ZONE 的夹回逻辑互相抵消形成死锁。改为：等比缩小后重试寻位。
-            const base = { ...(eb.transform.scale || [1, 1, 1]) };
-            let spot = freeSpot(others, eb, extentFor, zone0), k = 0;
-            while (!spot && k < 2) {
-              k++;
-              const f = 1 / (1 + 0.5 * k);
-              eb.transform.scale = base.map(v => Math.round(v * f * 100) / 100);
-              spot = freeSpot(others, eb, extentFor, zone0);
-            }
-            if (!spot) { eb.transform.scale = base; }
-            if (spot) {
-              eb.transform.position = spot;
-              applied.push({ code: iss.code, id: eb.id, position: spot,
-                scale: k ? eb.transform.scale : null, note: k ? '分区内无空位，缩小 ' + (100 * (1 - 1 / (1 + 0.5 * k))).toFixed(0) + '% 后重新摆放' : '在分区内重新寻找空位' });
-              changed = true;
-            } else markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg,
-              note: '分区内无空位且缩小后仍放不下，需扩大分区或移除实体' });
-          } else markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg, note: '重叠实体未找到' });
+          else markUnresolved({ code: iss.code, id: e.id, msg: iss.msg, note: '分区容不下该尺寸，需扩大分区或移除实体' });
           break;
         }
         case 'SCALE_TOO_TALL':
