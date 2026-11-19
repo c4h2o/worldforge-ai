@@ -8,8 +8,15 @@ let drag=null,lx=0,ly=0;
 canvas.addEventListener('mousedown',e=>{drag=e.button===2?'pan':e.button===0?'rot':null;lx=e.clientX;ly=e.clientY;e.preventDefault();});
 window.addEventListener('mouseup',()=>drag=null);
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
-canvas.addEventListener('mousemove',e=>{if(!drag)return;const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;if(drag==='rot'){yaw+=dx*0.01;pitch=Math.max(-1.5,Math.min(1.5,pitch+dy*0.01));}else{const s=dist*0.0016;cx-=Math.sin(yaw)*dx*s;cz-=Math.cos(yaw)*dx*s;cy+=dy*s;}});
-canvas.addEventListener('wheel',e=>{dist=Math.max(3,Math.min(60,dist*(1+e.deltaY*0.001)));e.preventDefault();},{passive:false});
+canvas.addEventListener('mousemove',e=>{if(!drag)return;const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;
+  if(drag==='rot'){yaw+=dx*0.01;pitch=Math.max(-1.5,Math.min(1.5,pitch+dy*0.01));return;}
+  // 右键 = 沿相机自身平面平移（屏幕左↔右 对应相机 right，上↔下 对应相机 up）
+  const f=[-Math.cos(pitch)*Math.sin(yaw),-Math.sin(pitch),-Math.cos(pitch)*Math.cos(yaw)];
+  const rgt=[-f[2],0,f[0]];
+  const up=[-f[0]*f[1],f[0]*f[0]+f[2]*f[2],-f[2]*f[1]];
+  const s=0.0016*Math.max(2,dist);
+  cx+=(-rgt[0]*dx-up[0]*dy)*s;cy+=(-rgt[1]*dx-up[1]*dy)*s;cz+=(-rgt[2]*dx-up[2]*dy)*s;});
+canvas.addEventListener('wheel',e=>{dist=Math.max(2,Math.min(200,dist*(1+e.deltaY*0.001)));e.preventDefault();},{passive:false});
 
 // ── 场景资产装载 ─────────────────────────────────
 const items=[];let sceneId=null,sceneName='无场景';
@@ -136,7 +143,7 @@ function diagOnce(){
   const gl=rd.gl;const e=gl.getError();
   const uintExt=gl.getExtension('OES_element_index_uint');
   const p=items[0].prims[0];
-  dbg.push('GL 诊断: err='+(e===0?'无':e===1282?'INVALID_OPERATION':e===1283?'INVALID_VALUE':e)+' | OES_element_index_uint='+(uintExt?'有':'无')+' | 首prim idx='+p.count+' 顶点='+p.vb.byteLength/4+3);
+  dbg.push('GL 诊断: err='+(e===0?'无':e===1282?'INVALID_OPERATION':e===1283?'INVALID_VALUE':e)+' | OES_element_index_uint='+(uintExt?'有':'无')+' | 首prim idx='+p.count);
   hud.textContent=sceneName+' · '+items.length+' 资产 · '+dbg.join(' | ');
 }
 function frame(){
