@@ -13,16 +13,26 @@ canvas.addEventListener('wheel',e=>{dist=Math.max(3,Math.min(60,dist*(1+e.deltaY
 
 // ── 场景资产装载 ─────────────────────────────────
 const items=[];let sceneId=null,sceneName='无场景';
+const dbg=[];
 async function loadItems(){
   items.length=0;
   const sc=await(await fetch('/api/scenes')).json();
   const list=sc.scenes||sc;const scene=list.at(-1);
-  if(!scene)return 0;
+  if(!scene){dbg.push('无场景');return 0;}
   sceneId=scene.id;sceneName=scene.name||scene.id;
   const ares=await(await fetch('/api/assets')).json();
   const lib=ares.assets||ares;
   const map=Array.isArray(lib)?Object.fromEntries(lib.map(a=>[a.id,a])):lib;
-  for(const e of scene.scene_graph.entities){const a=map[e.asset_id];if(!a)continue;const la=await rd.loadAsset(a.local_path);items.push({id:e.id,prims:la.prims,parts:la.parts,pos:e.transform.position||[0,0,0],rot:e.transform.rotation||[0,0,0],scale:e.transform.scale||[1,1,1],anim:e.animation||null});}
+  const ents=(scene.scene_graph&&scene.scene_graph.entities)||[];
+  for(const e of ents){
+    const a=map[e.asset_id];
+    if(!a){dbg.push('缺资产 '+e.asset_id);continue;}
+    try{
+      const la=await rd.loadAsset(a.local_path);
+      if(!la||!Array.isArray(la.prims)||!la.prims.length){dbg.push('空网格 '+e.asset_id);continue;}
+      items.push({id:e.id,prims:la.prims,parts:la.parts,pos:(e.transform&&e.transform.position)||[0,0,0],rot:(e.transform&&e.transform.rotation)||[0,0,0],scale:(e.transform&&e.transform.scale)||[1,1,1],anim:e.animation||null});
+    }catch(err){dbg.push(e.asset_id+': '+err.message);}
+  }
   return items.length;
 }
 
@@ -35,11 +45,12 @@ async function loadCritic(){
   const r=await(await fetch('/api/scenes/'+sceneId+'/critic')).json();
   review=r;scoreEl.textContent=r.score;
   scoreEl.style.color=r.clean?'#8f8':(r.ok?'#fd8':'#f77');
-  badgeEl.textContent=(r.clean?'CLEAN':'有问题 '+(r.issues.length||0))+' · '+(r.ok?'可接受':'不合格');
+  const iss=Array.isArray(r.issues)?r.issues:[];
+  badgeEl.textContent=(r.clean?'CLEAN':'有问题 '+iss.length)+' · '+(r.ok?'可接受':'不合格');
   badgeEl.style.color=r.clean?'#8f8':(r.ok?'#fd8':'#f77');
   flagged.clear();
-  for(const i of r.issues){(i.id?[i.id]:(i.ids||[])).forEach(id=>{if(items.some(it=>it.id===id))flagged.set(id,i.level);});}
-  issuesEl.innerHTML=r.issues.length?r.issues.map(i=>'<li class="'+i.level+'"><b>'+i.level+'</b> '+i.code+' · '+i.msg+'</li>').join(''):'<li class="ok">四维审查通过：量纲 / 布局 / 语义 / 光照</li>';
+  for(const i of iss){(i.id?[i.id]:(i.ids||[])).forEach(id=>{if(items.some(it=>it.id===id))flagged.set(id,i.level);});}
+  issuesEl.innerHTML=iss.length?iss.map(i=>'<li class="'+i.level+'"><b>'+i.level+'</b> '+i.code+' · '+i.msg+'</li>').join(''):'<li class="ok">四维审查通过：量纲 / 布局 / 语义 / 光照</li>';
   panel.style.display='block';
 }
 fixBtn.addEventListener('click',async()=>{
@@ -97,13 +108,13 @@ async function loadPreview(){
 }
 pvRefresh.addEventListener('click',loadPreview);
 pvWireT.addEventListener('change',drawWire);
-
 try{
   const n=await loadItems();
   hud.textContent=sceneName+' · '+n+' 资产';
   await loadCritic();
   loadPreview();
-}catch(e){hud.textContent='加载失败: '+e.message;panel.style.display='none';}
+window.addEventListener('error',ev=>{dbg.push('未捕获: '+ev.message);hud.textContent=sceneName+' · '+items.length+' 资产 · '+dbg.join(' | ');});
+}catch(e){hud.textContent='加载失败: '+e.message+(dbg.length?' · '+dbg.join(' | '):'');panel.style.display=items.length?'block':'none';}
 function frame(){
   const w=canvas.clientWidth,h=canvas.clientHeight;
   const proj=persp(0.9,w/h,0.1,200),view=lookAt(eyeFrom(),[cx,cy,cz],[0,1,0]);

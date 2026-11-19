@@ -470,9 +470,9 @@ export function createApp(options = {}) {
         fs.writeFileSync(path.join(IMAGES_DIR, name), buf);
         return json(res, 200, { image_url: '/images/' + name, provider: activeImageProvider.name, prompt: b.prompt || 'concept' });
       }
-      if (p === '/film.html' && req.method === 'GET') { const data = fs.readFileSync(FILM_HTML); res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(data); }
-      if (p === '/film.mjs') { const data = fs.readFileSync(FILM_JS); res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(data); }
-      if (p === '/renderer.mjs') { const data = fs.readFileSync(RENDERER_JS); res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(data); }
+      if (p === '/film.html' && req.method === 'GET') { const data = fs.readFileSync(FILM_HTML); res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end(data); }
+      if (p === '/film.mjs') { const data = fs.readFileSync(FILM_JS); res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' }); return res.end(data); }
+      if (p === '/renderer.mjs') { const data = fs.readFileSync(RENDERER_JS); res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' }); return res.end(data); }
       const fixRe = p.match(/^\/api\/scenes\/([^/]+)\/autofix$/);
       if (fixRe && req.method === 'POST') {
         const sc = scenes.get(fixRe[1]);
@@ -516,8 +516,8 @@ export function createApp(options = {}) {
       }
 
       // 世界画布页
-      if (p === '/') { const data = fs.readFileSync(WORLD_HTML); res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(data); }
-      if (p === '/world.mjs') { const data = fs.readFileSync(WORLD_JS); res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(data); }
+      if (p === '/') { const data = fs.readFileSync(WORLD_HTML); res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end(data); }
+      if (p === '/world.mjs') { const data = fs.readFileSync(WORLD_JS); res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' }); return res.end(data); }
 
       // 静态产物
       if (p.startsWith('/assets/') || p.startsWith('/images/') || p.startsWith('/scenes/')) {
