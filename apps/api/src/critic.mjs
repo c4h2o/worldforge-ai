@@ -119,7 +119,7 @@ export function autofixScene(scene, opts = {}) {
   const ents = () => (scene && scene.scene_graph && scene.scene_graph.entities) || [];
   let review = reviewScene(scene, { extentFor, spec });
   const before = review.score;
-  let rounds = 0; const MAX = 5;
+  let rounds = 0; const MAX = 8;
   while (review.issues.length > 0 && rounds < MAX) {
     rounds++;
     let changed = false;
@@ -136,11 +136,15 @@ export function autofixScene(scene, opts = {}) {
           const hit = opts.searchAssets ? opts.searchAssets({ category: iss.fix.category }) : [];
           if (hit.length) {
             const ai = hit[0];
-            const pos = freeSpot(ents(), { id: 'x', asset_id: ai.id, transform: { position: [0, 0, 0], scale: [1, 1, 1] } }, extentFor);
-            ents().push({ id: ai.id + '_auto' + ents().length, asset_id: ai.id, semantic_role: iss.fix.category,
-              transform: { position: pos, rotation: [0, 0, 0], scale: [1, 1, 1] }, placed_by: 'critic', locked: false });
-            applied.push({ code: iss.code, id: ai.id, category: iss.fix.category, position: pos, note: '复用资产库同类别资产' });
-            changed = true;
+            const cand = { id: 'x', asset_id: ai.id, transform: { position: [0, 0, 0], scale: [1, 1, 1] } };
+            const zone0 = ((scene && scene.scene_graph && scene.scene_graph.zones) || [])[0];
+            const pos = freeSpot(ents(), cand, extentFor, zone0);
+            if (pos) {
+              ents().push({ id: ai.id + '_auto' + ents().length, asset_id: ai.id, semantic_role: iss.fix.category,
+                transform: { position: pos, rotation: [0, 0, 0], scale: [1, 1, 1] }, placed_by: 'critic', locked: false });
+              applied.push({ code: iss.code, id: ai.id, category: iss.fix.category, position: pos, note: '复用资产库同类别资产' });
+              changed = true;
+            } else markUnresolved({ code: iss.code, id: iss.id, msg: iss.msg, note: '分区内无空位，需扩大分区' });
           } else markUnresolved({ code: iss.code, id: iss.id, msg: iss.msg, note: '资产库无同类别资产，需 img3d.fromImage 生成' });
         } else if (iss.code === 'OVERLAP') {
           const ea = ents().find(x => x.id === (iss.ids || [])[0]);
@@ -150,13 +154,29 @@ export function autofixScene(scene, opts = {}) {
             const half = (b, k) => (b.max[k] - b.min[k]) / 2;
             const cen = (b, k) => (b.min[k] + b.max[k]) / 2;
             const pick = [0, 2].map(ax => ({ ax, gap: half(wa, ax) + half(wb, ax) + 0.4 - Math.abs(cen(wa, ax) - cen(wb, ax)) })).sort((p, q) => p.gap - q.gap)[0];
-            if (pick.gap > 0) {
-              const dir = cen(wb, pick.ax) >= cen(wa, pick.ax) ? 1 : -1;
-              const p = [...(eb.transform.position || [0, 0, 0])];
-              p[pick.ax] += dir * (pick.gap / 2 + 0.01);
-              eb.transform.position = p;
-              applied.push({ code: iss.code, id: eb.id, axis: pick.ax, shift: Math.round(dir * (pick.gap / 2 + 0.01) * 100) / 100, position: p }); changed = true;
-            } else markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg, note: '已无需分离' });
+            const zone0 = ((scene && scene.scene_graph && scene.scene_graph.zones) || [])[0];
+            const others = ents().filter(x => x.id !== eb.id);
+            // 分区内无空位时绝不"最小位移"：挪开必然越界，制造新的 OUT_OF_ZONE，
+            // 再被 OUT_OF_ZONE 夹回 → 无限震荡。改为等比缩小后重试寻位；仍不行则如实上报。
+            const base = [ ...(eb.transform.scale || [1, 1, 1]) ];
+            let spot = freeSpot(others, eb, extentFor, zone0), k = 0;
+            while (!spot && k < 2) {
+              k++;
+              const f = 1 / (1 + 0.5 * k);
+              eb.transform.scale = base.map(v => Math.round(v * f * 100) / 100);
+              spot = freeSpot(others, eb, extentFor, zone0);
+            }
+            if (!spot) eb.transform.scale = base;
+            if (spot) {
+              eb.transform.position = spot;
+              applied.push({ code: iss.code, id: eb.id, position: spot,
+                scale: k ? eb.transform.scale : null,
+                note: k ? '分区内无空位，缩小 ' + Math.round(100 * (1 - 1 / (1 + 0.5 * k))) + '% 后重新摆放' : '在分区内重新寻找空位' });
+              changed = true;
+            } else if (pick.gap <= 0) {
+              markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg, note: '已无需分离' });
+            } else markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg,
+              note: '分区内无空位且缩小后仍放不下，需扩大分区或移除实体' });
           } else markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg, note: '重叠实体未找到' });
         } else if (iss.code === 'NO_LIGHTS') {
           scene.scene_graph.lights.push(iss.fix.lights[0]);
@@ -194,13 +214,26 @@ export function autofixScene(scene, opts = {}) {
             const cen = (b, k) => (b.min[k] + b.max[k]) / 2;
             const pick = [0, 2].map(ax => ({ ax, gap: half(wa, ax) + half(wb, ax) + 0.4 - Math.abs(cen(wa, ax) - cen(wb, ax)) }))
               .sort((p, q) => p.gap - q.gap)[0];
-            if (pick.gap > 0) {
-              const dir = cen(wb, pick.ax) >= cen(wa, pick.ax) ? 1 : -1;
-              const p = [...(eb.transform.position || [0, 0, 0])];
-              p[pick.ax] += dir * (pick.gap / 2 + 0.01);
-              eb.transform.position = p;
-              applied.push({ code: iss.code, id: eb.id, axis: pick.ax, shift: dir * (pick.gap / 2 + 0.01), position: p }); changed = true;
+            const zone0 = ((scene && scene.scene_graph && scene.scene_graph.zones) || [])[0];
+            const others = ents().filter(x => x.id !== eb.id);
+            // 分区内没有空位时绝不"最小位移"——挪开必然越界，制造新的 OUT_OF_ZONE，
+            // 与 OUT_OF_ZONE 的夹回逻辑互相抵消形成死锁。改为：等比缩小后重试寻位。
+            const base = { ...(eb.transform.scale || [1, 1, 1]) };
+            let spot = freeSpot(others, eb, extentFor, zone0), k = 0;
+            while (!spot && k < 2) {
+              k++;
+              const f = 1 / (1 + 0.5 * k);
+              eb.transform.scale = base.map(v => Math.round(v * f * 100) / 100);
+              spot = freeSpot(others, eb, extentFor, zone0);
             }
+            if (!spot) { eb.transform.scale = base; }
+            if (spot) {
+              eb.transform.position = spot;
+              applied.push({ code: iss.code, id: eb.id, position: spot,
+                scale: k ? eb.transform.scale : null, note: k ? '分区内无空位，缩小 ' + (100 * (1 - 1 / (1 + 0.5 * k))).toFixed(0) + '% 后重新摆放' : '在分区内重新寻找空位' });
+              changed = true;
+            } else markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg,
+              note: '分区内无空位且缩小后仍放不下，需扩大分区或移除实体' });
           } else markUnresolved({ code: iss.code, ids: iss.ids, msg: iss.msg, note: '重叠实体未找到' });
           break;
         }
@@ -222,26 +255,30 @@ export function autofixScene(scene, opts = {}) {
   return { rounds, before, after: review.score, ok: review.ok, clean: review.issues.length === 0, applied, unresolved, issues: review.issues };
 }
 
-// 为新增实体找不重叠的空位（网格扫描）
-function freeSpot(entities, candidate, extentFor) {
+// 候选位是否被占用（3D 相交判定）
+function spotFree(entities, candidate, pos, extentFor) {
   const ext = extentFor(candidate.asset_id || candidate.id);
-  const box = (e) => worldBox(e, extentFor(e.asset_id || e.id));
-  const zones = [];
-  const test = (pos) => {
-    const c = { ...candidate, transform: { ...candidate.transform, position: pos } };
-    const bc = worldBox(c, ext);
-    return entities.every(e => {
-      const be = box(e);
-      const ox = Math.min(bc.max[0], be.max[0]) - Math.max(bc.min[0], be.min[0]);
-      const oz = Math.min(bc.max[2], be.max[2]) - Math.max(bc.min[2], be.min[2]);
-      const oy = Math.min(bc.max[1], be.max[1]) - Math.max(bc.min[1], be.min[1]);
-      return !(ox > 0 && oy > 0 && oz > 0);
-    });
-  };
-  const span = ext[0] / 2 + ext[2] / 2 + 0.4;
-  for (let gx = -6; gx <= 6; gx += 3.2) for (let gz = -6; gz <= 6; gz += 3.2) {
-    const p = [gx, 0, gz];
-    if (test(p)) return p;
-  }
-  return [12, 0, 0];
+  const bc = worldBox({ ...candidate, transform: { ...candidate.transform, position: pos } }, ext);
+  return entities.every(e => {
+    const be = worldBox(e, extentFor(e.asset_id || e.id));
+    const ox = Math.min(bc.max[0], be.max[0]) - Math.max(bc.min[0], be.min[0]);
+    const oz = Math.min(bc.max[2], be.max[2]) - Math.max(bc.min[2], be.min[2]);
+    const oy = Math.min(bc.max[1], be.max[1]) - Math.max(bc.min[1], be.min[1]);
+    return !(ox > 0 && oy > 0 && oz > 0);
+  });
+}
+// 为实体找不重叠的空位（网格扫描）：有分区时严格限制在分区内，找不到返回 null
+function freeSpot(entities, candidate, extentFor, zone) {
+  const ext = extentFor(candidate.asset_id || candidate.id);
+  const b = (zone && zone.bounds) ? zone.bounds : null;
+  const [x0, y0, z0, x1, , z1] = b || [-6, 0, -6, 6, 0, 6];
+  const hx = ext[0] / 2 + 0.3, hz = ext[2] / 2 + 0.3;
+  // 分区内：网格步长按实体占地的一半走，保证相邻候选位必然分离
+  const step = Math.max(0.6, Math.min(ext[0], ext[2]) / 2 + 0.15);
+  for (let gx = x0 + hx; gx <= x1 - hx + 1e-6; gx += step)
+    for (let gz = z0 + hz; gz <= z1 - hz + 1e-6; gz += step) {
+      const p = [Math.round(gx * 100) / 100, y0, Math.round(gz * 100) / 100];
+      if (spotFree(entities, candidate, p, extentFor)) return p;
+    }
+  return null;
 }
