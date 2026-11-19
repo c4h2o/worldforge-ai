@@ -1,4 +1,4 @@
-import{createRenderer,persp,lookAt,trs}from'/renderer.mjs';
+import{createRenderer,persp,lookAt,trs,mul}from'/renderer.mjs';
 const canvas=document.getElementById('gl'),hud=document.getElementById('info'),err=document.getElementById('err');
 const fail=m=>{err.style.display='block';err.textContent=m;};
 const rd=createRenderer(canvas);if(!rd.ok){fail(rd.error);throw new Error(rd.error);}
@@ -61,10 +61,48 @@ function worldBox(it){
       if(px<mnx)mnx=px;if(px>mxx)mxx=px;if(py<mny)mny=py;if(py>mxy)mxy=py;if(pz<mnz)mnz=pz;if(pz>mxz)mxz=pz;}}
   return mnx>mxx?null:[mnx,mny,mnz,mxx,mxy,mxz];
 }
+// ── 渲染预览面板（自研软光栅静帧 + 问题实体线框叠加）──────────
+const pvPanel=document.getElementById('pv'),pvImg=document.getElementById('pvImg'),pvWire=document.getElementById('pvWire'),pvRefresh=document.getElementById('pvRefresh'),pvSize=document.getElementById('pvSize'),pvWireT=document.getElementById('pvWireT');
+let pvCam=null,pvW=1024,pvH=576;
+function pvProj(v){
+  if(!pvCam)return null;
+  const pv=mul(persp(0.85,pvW/pvH,0.05,600),lookAt(pvCam.eye,pvCam.target,[0,1,0]));
+  const x=pv[0]*v[0]+pv[4]*v[1]+pv[8]*v[2]+pv[12],y=pv[1]*v[0]+pv[5]*v[1]+pv[9]*v[2]+pv[13],w=pv[3]*v[0]+pv[7]*v[1]+pv[11]*v[2]+pv[15]||1;
+  return[(x/w*0.5+0.5)*pvW,(1-(y/w*0.5+0.5))*pvH];
+}
+function drawWire(){
+  const ctx=pvWire.getContext('2d');ctx.clearRect(0,0,pvWire.width,pvWire.height);
+  if(!pvWireT.checked||!pvCam)return;
+  const cols={high:'255,70,80',medium:'255,180,60',low:'110,210,255'};
+  ctx.lineWidth=1.5;ctx.setLineDash([4,3]);
+  for(const[id,lv]of flagged){const it=items.find(i=>i.id===id);if(!it)continue;const b=worldBox(it);if(!b)continue;
+    const c=[[b[0],b[1],b[2]],[b[3],b[1],b[2]],[b[3],b[1],b[5]],[b[0],b[1],b[5]],[b[0],b[4],b[2]],[b[3],b[4],b[2]],[b[3],b[4],b[5]],[b[0],b[4],b[5]]];
+    const e=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+    ctx.strokeStyle='rgba('+(cols[lv]||'255,255,255')+',0.95)';ctx.beginPath();
+    for(const[p,q]of e){const a=pvProj(c[p]),d=pvProj(c[q]);if(!a||!d)continue;ctx.moveTo(a[0],a[1]);ctx.lineTo(d[0],d[1]);}
+    ctx.stroke();
+  }
+}
+async function loadPreview(){
+  if(!sceneId)return;
+  pvPanel.style.display='block';pvImg.removeAttribute('src');
+  const w=Number(pvSize.value)||1024,h=Math.round(w*0.5625);
+  try{
+    const r=await fetch('/api/scenes/'+sceneId+'/preview?w='+w+'&h='+h);
+    if(!r.ok)return;
+    const meta=JSON.parse(r.headers.get('x-preview-meta')||'null');
+    if(meta&&meta.camera){pvCam=meta.camera;pvW=meta.width;pvH=meta.height;pvWire.width=pvW;pvWire.height=pvH;}
+    pvImg.src=URL.createObjectURL(await r.blob());drawWire();
+  }catch(e){pvImg.alt='预览失败: '+e.message;}
+}
+pvRefresh.addEventListener('click',loadPreview);
+pvWireT.addEventListener('change',drawWire);
+
 try{
   const n=await loadItems();
   hud.textContent=sceneName+' · '+n+' 资产';
   await loadCritic();
+  loadPreview();
 }catch(e){hud.textContent='加载失败: '+e.message;panel.style.display='none';}
 function frame(){
   const w=canvas.clientWidth,h=canvas.clientHeight;

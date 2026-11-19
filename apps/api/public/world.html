@@ -18,10 +18,20 @@ html,body{margin:0;height:100%;background:#0b1020;color:#cfe;font-family:monospa
 #autofix{margin-top:10px;width:100%;font-family:inherit;font-size:12px;padding:7px;border:none;border-radius:6px;background:#0a5;color:#041;cursor:pointer}
 #autofix:disabled{opacity:.5;cursor:wait}
 #critic .hint{color:#89a;font-size:10px;margin-top:8px}
+#pv{position:fixed;bottom:8px;right:8px;width:330px;font-size:12px;background:#000a;border:1px solid #234;border-radius:8px;padding:10px 12px;z-index:2;display:none}
+#pv h3{margin:0 0 6px;font-size:12px;color:#8cf}
+#pv .imgwrap{position:relative;margin-top:6px;border-radius:6px;overflow:hidden;background:#000;min-height:40px}
+#pv img{display:block;width:100%;border-radius:6px}
+#pv canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#pv .row{margin-top:6px;display:flex;gap:6px;align-items:center}
+#pv button,#pv select{font-family:inherit;font-size:11px;padding:5px 8px;border:none;border-radius:5px;background:#235;color:#cfe;cursor:pointer}
+#pv label{font-size:11px;color:#9ab;display:flex;align-items:center;gap:4px;white-space:nowrap}
+#pv .hint{color:#89a;font-size:10px;margin-top:6px;line-height:1.4}
 </style></head><body>
 <canvas id="gl"></canvas>
 <div id="hud">WorldForge 世界画布 · 零依赖 WebGL<br><span id="info">加载中…</span><br>左键旋转 · 滚轮缩放 · 右键平移</div>
 <div id="critic"><h3>批评器 · 四维审查</h3><span class="score" id="criticScore">–</span><span class="badge" id="criticBadge"></span><ul id="criticIssues"></ul><button id="autofix">一键自修复（生成→批评→修正）</button><div class="hint">越界夹回 · 重叠分离 · 比例归一 · 补灯 · 缺失实体复用资产</div></div>
+<div id="pv"><h3>渲染预览 · 自研软光栅</h3><div class="imgwrap"><img id="pvImg" alt="预览"><canvas id="pvWire" width="1024" height="576"></canvas></div><div class="row"><button id="pvRefresh">重新渲染</button><select id="pvSize"><option value="512">512 宽</option><option value="1024" selected>1024 宽</option><option value="1920">1920 宽</option></select><label><input type="checkbox" id="pvWireT"> 线框叠加</label></div><div class="hint">软光栅静帧 · 线框 = 问题实体包围盒（与光栅器同一相机投影）</div></div>
 <div id="err"></div>
 <script type="module" src="/world.mjs"></script>
 </body></html>

@@ -183,7 +183,7 @@ function previewForScene(scene, w, h) {
   if (!out.ok) throw new Error(out.error || '预览渲染失败');
   const name = 'scene_preview_' + scene.id + '.png';
   fs.writeFileSync(path.join(IMAGES_DIR, name), Buffer.from(out.png));
-  return { url: '/images/' + name, width: out.width, height: out.height, shaded: out.shaded, ms: out.ms };
+  return { url: '/images/' + name, width: out.width, height: out.height, shaded: out.shaded, ms: out.ms, camera: out.camera };
 }
 
 // 单资产预览：以原点放置资产，自动取景
@@ -497,7 +497,7 @@ export function createApp(options = {}) {
         const ph = parseInt(u.searchParams.get('h') || '576', 10) || 576;
         const info = previewForScene(sc, pw, ph);
         const buf = fs.readFileSync(path.join(IMAGES_DIR, path.basename(info.url)));
-        res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buf.length, 'Cache-Control': 'no-cache' });
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buf.length, 'Cache-Control': 'no-cache', 'X-Preview-Meta': JSON.stringify({ camera: info.camera, width: info.width, height: info.height, bbox: info.bbox }) });
         return res.end(buf);
       }
       const filmRe = p.match(/^\/api\/scenes\/([^/]+)\/film$/);
