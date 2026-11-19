@@ -64,6 +64,18 @@ fixBtn.addEventListener('click',async()=>{
   fixBtn.textContent='一键自修复（生成→批评→修正）';fixBtn.disabled=false;
 });
 // 实体世界包围盒（原语本地 bb 经 TRS 变换）
+// 自适应取景：把 WebGL 相机对准实体包围盒（与自研软光栅器同一公式）
+function fitCamera(){
+  let mnx=1e9,mny=1e9,mnz=1e9,mxx=-1e9,mxy=-1e9,mxz=-1e9,any=false;
+  for(const it of items){const b=worldBox(it);if(!b)continue;any=true;
+    mnx=Math.min(mnx,b[0]);mxx=Math.max(mxx,b[3]);mny=Math.min(mny,b[1]);mxy=Math.max(mxy,b[4]);mnz=Math.min(mnz,b[2]);mxz=Math.max(mxz,b[5]);}
+  if(!any)return false;
+  cx=(mnx+mxx)/2;cy=(mny+mxy)/2;cz=(mnz+mxz)/2;
+  const maxDim=Math.max(mxx-mnx,mxy-mny,mxz-mnz);
+  dist=Math.max(3,maxDim*1.7/Math.tan(0.9/2)*0.5);
+  yaw=0.7;pitch=0.35;
+  return true;
+}
 function worldBox(it){
   const M=trs(it.pos,it.rot,it.scale);let mnx=1e9,mny=1e9,mnz=1e9,mxx=-1e9,mxy=-1e9,mxz=-1e9;
   for(const p of it.prims){const b=p.bb;if(!b)continue;
@@ -98,27 +110,40 @@ async function loadPreview(){
   if(!sceneId)return;
   pvPanel.style.display='block';pvImg.removeAttribute('src');
   const w=Number(pvSize.value)||1024,h=Math.round(w*0.5625);
+  const url='/api/scenes/'+sceneId+'/preview?w='+w+'&h='+h+'&t='+Date.now();
   try{
-    const r=await fetch('/api/scenes/'+sceneId+'/preview?w='+w+'&h='+h);
-    if(!r.ok)return;
+    const r=await fetch(url);
+    if(!r.ok){pvImg.alt='预览失败: HTTP '+r.status;return;}
     const meta=JSON.parse(r.headers.get('x-preview-meta')||'null');
     if(meta&&meta.camera){pvCam=meta.camera;pvW=meta.width;pvH=meta.height;pvWire.width=pvW;pvWire.height=pvH;}
-    pvImg.src=URL.createObjectURL(await r.blob());drawWire();
+    pvImg.src=url;drawWire();
   }catch(e){pvImg.alt='预览失败: '+e.message;}
 }
+pvImg.onerror=()=>{pvImg.alt='预览加载失败，点重新渲染';};
 pvRefresh.addEventListener('click',loadPreview);
 pvWireT.addEventListener('change',drawWire);
 try{
   const n=await loadItems();
-  hud.textContent=sceneName+' · '+n+' 资产';
+  hud.textContent=sceneName+' · '+n+' 资产'+(dbg.length?'（跳过: '+dbg.join('; ')+'）':'');
+  if(fitCamera())hud.textContent+=' · 已自适应取景';
   await loadCritic();
   loadPreview();
 window.addEventListener('error',ev=>{dbg.push('未捕获: '+ev.message);hud.textContent=sceneName+' · '+items.length+' 资产 · '+dbg.join(' | ');});
 }catch(e){hud.textContent='加载失败: '+e.message+(dbg.length?' · '+dbg.join(' | '):'');panel.style.display=items.length?'block':'none';}
+let diagDone=false;
+function diagOnce(){
+  if(diagDone)return; if(!items.length)return; diagDone=true;
+  const gl=rd.gl;const e=gl.getError();
+  const uintExt=gl.getExtension('OES_element_index_uint');
+  const p=items[0].prims[0];
+  dbg.push('GL 诊断: err='+(e===0?'无':e===1282?'INVALID_OPERATION':e===1283?'INVALID_VALUE':e)+' | OES_element_index_uint='+(uintExt?'有':'无')+' | 首prim idx='+p.count+' 顶点='+p.vb.byteLength/4+3);
+  hud.textContent=sceneName+' · '+items.length+' 资产 · '+dbg.join(' | ');
+}
 function frame(){
   const w=canvas.clientWidth,h=canvas.clientHeight;
   const proj=persp(0.9,w/h,0.1,200),view=lookAt(eyeFrom(),[cx,cy,cz],[0,1,0]);
   rd.drawAll(items,proj,view,performance.now()/1000);
+  diagOnce();
   for(const it of items){const lv=flagged.get(it.id);if(!lv)continue;const b=worldBox(it);if(!b)continue;
     rd.drawBox([b[0]-0.04,b[1]-0.04,b[2]-0.04],[b[3]+0.04,b[4]+0.04,b[5]+0.04],LEVEL_COLOR[lv]||LEVEL_COLOR.low,proj,view);}
   requestAnimationFrame(frame);
